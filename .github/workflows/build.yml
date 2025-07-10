@@ -54,7 +54,9 @@ jobs:
           pkg-config \
           wget \
           curl \
-          libsdl2-dev
+          libsdl2-dev \
+          libvulkan-dev \
+          libvulkan1
           
     - name: Install CMake 3.29+
       run: |
@@ -100,6 +102,7 @@ jobs:
         echo "PATH=/opt/vulkan-sdk/bin:$PATH" >> "$GITHUB_ENV"
         echo "LD_LIBRARY_PATH=/opt/vulkan-sdk/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
         echo "VK_LAYER_PATH=/opt/vulkan-sdk/etc/vulkan/explicit_layer.d" >> "$GITHUB_ENV"
+        echo "PKG_CONFIG_PATH=/opt/vulkan-sdk/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
         
         # Verify installation
         /opt/vulkan-sdk/bin/glslangValidator --version
@@ -133,6 +136,12 @@ jobs:
         ls -la $VULKAN_SDK/include/vulkan/ || echo "Vulkan include directory not found"
         ls -la $VULKAN_SDK/lib/libvulkan* || echo "Vulkan library not found"
         
+        # Find Vulkan package first
+        find $VULKAN_SDK -name "VulkanConfig.cmake" -o -name "FindVulkan.cmake" || echo "Vulkan CMake config not found"
+        
+        # Also check system vulkan
+        pkg-config --exists vulkan && echo "System vulkan found via pkg-config" || echo "System vulkan not found via pkg-config"
+        
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
           -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
@@ -142,7 +151,8 @@ jobs:
           -DVulkan_INCLUDE_DIR=$VULKAN_SDK/include \
           -DVulkan_LIBRARY=$VULKAN_SDK/lib/libvulkan.so \
           -DVulkan_FOUND=ON \
-          -DCMAKE_PREFIX_PATH=$VULKAN_SDK
+          -DCMAKE_PREFIX_PATH=$VULKAN_SDK \
+          -DPkgConfig_EXECUTABLE=$(which pkg-config)
           
     - name: Build project
       run: |
@@ -168,6 +178,10 @@ jobs:
         
         # Verify libraries are not empty and have correct permissions
         ls -la install/lib/*.so*
+        
+        # Additional verification that libraries can be loaded
+        echo "Testing library loading with ldd:"
+        ldd install/lib/liblsfg-vk.so | grep -E "(vulkan|not found)" || echo "Vulkan dependency check complete"
         
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4

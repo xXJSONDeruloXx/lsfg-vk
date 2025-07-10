@@ -18,6 +18,10 @@ endif()
 include(cmake/FetchDXVK.cmake)
 include(cmake/FetchPeParse.cmake)
 
+# Create vulkan interface library
+add_library(vulkan INTERFACE)
+target_link_libraries(vulkan INTERFACE -lvulkan)
+
 add_subdirectory(lsfg-vk-gen)
 
 # main project

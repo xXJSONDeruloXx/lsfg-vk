@@ -1,5 +1,9 @@
 name: Build lsfg-vk
 
+# Note: DXVK v2.6.2 requires Vulkan extensions that may not be available in older Vulkan SDKs
+# If build fails with missing VK_KHR_MAINTENANCE_7, VK_NV_RAW_ACCESS_CHAINS, etc.,
+# either update to a newer Vulkan SDK or downgrade DXVK version in cmake/FetchDXVK.cmake
+
 on:
   push:
     branches: [ main, master, develop ]
@@ -79,14 +83,21 @@ jobs:
           
     - name: Install Vulkan SDK
       run: |
-        # Fetch latest Vulkan SDK version dynamically
-        VULKAN_VERSION=$(curl -s https://vulkan.lunarg.com/sdk/latest/linux.txt)
+        # Install the latest Vulkan SDK that includes newer extensions
+        # DXVK v2.6.2 requires Vulkan 1.3.275+ for newer extensions
+        VULKAN_VERSION="1.3.296"  # Use a specific recent version
         FILENAME="vulkan-sdk-${VULKAN_VERSION}-linux.x86_64.tar.xz"
         
         echo "Installing Vulkan SDK version: $VULKAN_VERSION"
         
         cd /tmp
-        wget "https://sdk.lunarg.com/sdk/download/${VULKAN_VERSION}/linux/${FILENAME}"
+        wget "https://sdk.lunarg.com/sdk/download/${VULKAN_VERSION}/linux/${FILENAME}" || {
+          echo "Failed to download specific version, trying latest..."
+          VULKAN_VERSION=$(curl -s https://vulkan.lunarg.com/sdk/latest/linux.txt)
+          FILENAME="vulkan-sdk-${VULKAN_VERSION}-linux.x86_64.tar.xz"
+          wget "https://sdk.lunarg.com/sdk/download/${VULKAN_VERSION}/linux/${FILENAME}"
+        }
+        
         tar -xf "$FILENAME"
         
         # Set up Vulkan SDK
@@ -107,6 +118,12 @@ jobs:
         # Verify installation
         /opt/vulkan-sdk/bin/glslangValidator --version
         echo "Vulkan SDK installed to: /opt/vulkan-sdk"
+        
+        # Check for the specific extensions that DXVK needs
+        echo "Checking for required Vulkan extensions in headers..."
+        grep -r "VK_KHR_MAINTENANCE_7_EXTENSION_NAME" /opt/vulkan-sdk/include/ || echo "Warning: VK_KHR_MAINTENANCE_7 not found"
+        grep -r "VK_NV_RAW_ACCESS_CHAINS_EXTENSION_NAME" /opt/vulkan-sdk/include/ || echo "Warning: VK_NV_RAW_ACCESS_CHAINS not found"
+        grep -r "VK_KHR_LOAD_STORE_OP_NONE_EXTENSION_NAME" /opt/vulkan-sdk/include/ || echo "Warning: VK_KHR_LOAD_STORE_OP_NONE not found"
           
     - name: Verify Vulkan installation
       run: |
@@ -117,9 +134,22 @@ jobs:
         which glslangValidator
         $VULKAN_SDK/bin/vulkaninfo --summary || echo "vulkaninfo failed - no Vulkan devices available in CI"
         
-        # Check Vulkan headers version
-        echo "Checking Vulkan headers..."
+        # Check Vulkan headers version and specific extensions
+        echo "Checking Vulkan headers version..."
         echo '#include <vulkan/vulkan.h>' | gcc -I$VULKAN_SDK/include -E -dM - | grep -i "VK_HEADER_VERSION" || true
+        echo '#include <vulkan/vulkan.h>' | gcc -I$VULKAN_SDK/include -E -dM - | grep -i "VK_API_VERSION" || true
+        
+        # Check for the specific extensions that were causing build failures
+        echo "Checking for DXVK-required extensions..."
+        grep -r "VkPhysicalDeviceMaintenance7PropertiesKHR" $VULKAN_SDK/include/ || echo "VkPhysicalDeviceMaintenance7PropertiesKHR not found - may cause DXVK build issues"
+        grep -r "VkPhysicalDeviceMaintenance7FeaturesKHR" $VULKAN_SDK/include/ || echo "VkPhysicalDeviceMaintenance7FeaturesKHR not found - may cause DXVK build issues"
+        grep -r "VkPhysicalDeviceRawAccessChainsFeaturesNV" $VULKAN_SDK/include/ || echo "VkPhysicalDeviceRawAccessChainsFeaturesNV not found - may cause DXVK build issues"
+        
+        # Also check if vulkan headers are properly accessible
+        echo "Testing vulkan header compilation..."
+        echo '#include <vulkan/vulkan.h>' > /tmp/test_vulkan.c
+        echo 'int main() { return VK_API_VERSION_1_3; }' >> /tmp/test_vulkan.c
+        gcc -I$VULKAN_SDK/include /tmp/test_vulkan.c -o /tmp/test_vulkan && echo "Vulkan headers compile successfully" || echo "Vulkan headers compilation failed"
         
     - name: Setup build directory
       run: |
@@ -154,9 +184,78 @@ jobs:
           -DCMAKE_PREFIX_PATH=$VULKAN_SDK \
           -DPkgConfig_EXECUTABLE=$(which pkg-config)
           
+    - name: Check DXVK-Vulkan compatibility
+      run: |
+        echo "Checking DXVK-Vulkan compatibility..."
+        echo "DXVK version: v2.6.2 (from cmake/FetchDXVK.cmake)"
+        echo "Vulkan SDK version: $(ls /opt/vulkan-sdk/ | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' || echo 'unknown')"
+        
+        # Check if we have the required extensions
+        echo "Required extensions for DXVK v2.6.2:"
+        echo "- VK_KHR_MAINTENANCE_7"
+        echo "- VK_NV_RAW_ACCESS_CHAINS" 
+        echo "- VK_KHR_LOAD_STORE_OP_NONE"
+        
+        # Check availability
+        MISSING_EXTENSIONS=0
+        
+        if ! grep -r "VK_KHR_MAINTENANCE_7_EXTENSION_NAME" $VULKAN_SDK/include/ >/dev/null 2>&1; then
+          echo "❌ VK_KHR_MAINTENANCE_7 not found"
+          MISSING_EXTENSIONS=1
+        else
+          echo "✅ VK_KHR_MAINTENANCE_7 found"
+        fi
+        
+        if ! grep -r "VK_NV_RAW_ACCESS_CHAINS_EXTENSION_NAME" $VULKAN_SDK/include/ >/dev/null 2>&1; then
+          echo "❌ VK_NV_RAW_ACCESS_CHAINS not found"
+          MISSING_EXTENSIONS=1
+        else
+          echo "✅ VK_NV_RAW_ACCESS_CHAINS found"
+        fi
+        
+        if ! grep -r "VK_KHR_LOAD_STORE_OP_NONE_EXTENSION_NAME" $VULKAN_SDK/include/ >/dev/null 2>&1; then
+          echo "❌ VK_KHR_LOAD_STORE_OP_NONE not found"
+          MISSING_EXTENSIONS=1
+        else
+          echo "✅ VK_KHR_LOAD_STORE_OP_NONE found"
+        fi
+        
+        if [ $MISSING_EXTENSIONS -eq 1 ]; then
+          echo ""
+          echo "⚠️  Some required extensions are missing."
+          echo "💡 If the build fails, consider:"
+          echo "   1. Using an older DXVK version (e.g., v2.5.x)"
+          echo "   2. Or updating to a newer Vulkan SDK"
+          echo "   3. Or checking if DXVK has compatibility options"
+        else
+          echo ""
+          echo "✅ All required extensions appear to be available!"
+        fi
+        
     - name: Build project
       run: |
-        cmake --build build --verbose --parallel $(nproc)
+        echo "Attempting build with current DXVK version..."
+        cmake --build build --verbose --parallel $(nproc) 2>&1 | tee build.log || {
+          echo "Build failed. Checking if it's due to missing Vulkan extensions..."
+          
+          # Check for specific DXVK extension errors
+          if grep -q "VK_KHR_MAINTENANCE_7\|VK_NV_RAW_ACCESS_CHAINS\|VkPhysicalDeviceMaintenance7\|VkPhysicalDeviceRawAccessChains" build.log; then
+            echo "Build failed due to missing Vulkan extensions in DXVK."
+            echo "This likely means DXVK v2.6.2 requires newer Vulkan headers than available."
+            echo "Consider updating the DXVK version in cmake/FetchDXVK.cmake to an older compatible version."
+            echo "Or update the Vulkan SDK to a newer version that includes these extensions."
+            
+            # Print some helpful debugging info
+            echo "Current Vulkan SDK version details:"
+            $VULKAN_SDK/bin/vulkaninfo --summary || true
+            echo "DXVK version being used: v2.6.2"
+            echo "Available Vulkan extensions in SDK:"
+            find $VULKAN_SDK/include -name "*.h" -exec grep -l "VK_KHR_MAINTENANCE_7\|VK_NV_RAW_ACCESS_CHAINS" {} \; || echo "Extensions not found in current SDK"
+          fi
+          
+          # Re-throw the error to fail the build
+          exit 1
+        }
         
     - name: Install project
       run: |

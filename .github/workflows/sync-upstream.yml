@@ -1,0 +1,259 @@
+name: Sync Upstream Releases
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Get latest upstream workflow run
+      id: upstream
+      run: |
+        # Get the latest workflow run for the build.yml workflow
+        WORKFLOW_RUNS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/PancakeTAS/lsfg-vk/actions/workflows/build.yml/runs?per_page=1&status=success")
+        
+        # Extract the latest successful run ID and URL
+        RUN_ID=$(echo "$WORKFLOW_RUNS" | jq -r '.workflow_runs[0].id // empty')
+        RUN_URL=$(echo "$WORKFLOW_RUNS" | jq -r '.workflow_runs[0].html_url // empty')
+        RUN_SHA=$(echo "$WORKFLOW_RUNS" | jq -r '.workflow_runs[0].head_sha // empty')
+        RUN_DATE=$(echo "$WORKFLOW_RUNS" | jq -r '.workflow_runs[0].created_at // empty')
+        
+        if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+          echo "No successful workflow runs found"
+          exit 1
+        fi
+        
+        echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+        echo "run_url=$RUN_URL" >> $GITHUB_OUTPUT
+        echo "run_sha=$RUN_SHA" >> $GITHUB_OUTPUT
+        echo "run_date=$RUN_DATE" >> $GITHUB_OUTPUT
+        
+        echo "Found successful run: $RUN_ID"
+        echo "URL: $RUN_URL"
+    
+    - name: Check if we already have this release
+      id: check_release
+      run: |
+        # Check if we already have a release for this workflow run
+        EXISTING_RELEASE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases/tags/upstream-${{ steps.upstream.outputs.run_id }}" | jq -r '.id // empty')
+        
+        if [ -n "$EXISTING_RELEASE" ] && [ "$EXISTING_RELEASE" != "null" ]; then
+          echo "Release for workflow run ${{ steps.upstream.outputs.run_id }} already exists"
+          echo "skip=true" >> $GITHUB_OUTPUT
+        else
+          echo "No existing release found, proceeding with sync"
+          echo "skip=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Get upstream workflow artifacts
+      id: artifacts
+      if: steps.check_release.outputs.skip == 'false'
+      run: |
+        # Get artifacts from the workflow run
+        ARTIFACTS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/PancakeTAS/lsfg-vk/actions/runs/${{ steps.upstream.outputs.run_id }}/artifacts")
+        
+        # Check if there are any artifacts
+        ARTIFACT_COUNT=$(echo "$ARTIFACTS" | jq '.total_count // 0')
+        if [ "$ARTIFACT_COUNT" -eq 0 ]; then
+          echo "No artifacts found for workflow run ${{ steps.upstream.outputs.run_id }}"
+          exit 1
+        fi
+        
+        echo "Found $ARTIFACT_COUNT artifacts"
+        echo "$ARTIFACTS" | jq -c '.artifacts[]' > artifacts.json
+        echo "artifacts_found=true" >> $GITHUB_OUTPUT
+    
+    - name: Download and process artifacts
+      if: steps.check_release.outputs.skip == 'false' && steps.artifacts.outputs.artifacts_found == 'true'
+      run: |
+        mkdir -p downloads
+        REMOTE_BINARIES="[]"
+        
+        # Process each artifact
+        while IFS= read -r artifact; do
+          ARTIFACT_ID=$(echo "$artifact" | jq -r '.id')
+          ARTIFACT_NAME=$(echo "$artifact" | jq -r '.name')
+          
+          echo "Downloading artifact: $ARTIFACT_NAME (ID: $ARTIFACT_ID)"
+          
+          # Download the artifact
+          curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -o "downloads/${ARTIFACT_NAME}.zip" \
+            "https://api.github.com/repos/PancakeTAS/lsfg-vk/actions/artifacts/${ARTIFACT_ID}/zip"
+          
+          # Extract the artifact
+          cd downloads
+          unzip -o "${ARTIFACT_NAME}.zip"
+          rm "${ARTIFACT_NAME}.zip"
+          
+          # Find the actual files in the extracted content
+          for file in *; do
+            if [ -f "$file" ] && [ "$file" != "${ARTIFACT_NAME}.zip" ]; then
+              # Calculate SHA256 hash
+              SHA256=$(sha256sum "$file" | cut -d' ' -f1)
+              
+              # Add to remote_binaries JSON
+              REMOTE_BINARIES=$(echo "$REMOTE_BINARIES" | jq --arg name "$file" --arg url "https://github.com/${{ github.repository }}/releases/download/upstream-${{ steps.upstream.outputs.run_id }}/$file" --arg hash "$SHA256" '. += [{name: $name, url: $url, sha256hash: $hash}]')
+              
+              echo "Processed file: $file (SHA256: $SHA256)"
+            fi
+          done
+          
+          cd ..
+        done < artifacts.json
+        
+        echo "REMOTE_BINARIES<<EOF" >> $GITHUB_ENV
+        echo "$REMOTE_BINARIES" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+        
+        # Also save to file for the release body
+        echo "$REMOTE_BINARIES" | jq . > remote_binaries.json
+    
+    - name: Create release body
+      if: steps.check_release.outputs.skip == 'false' && steps.artifacts.outputs.artifacts_found == 'true'
+      run: |
+        cat > release_body.md << EOF
+        # Upstream Sync Release
+        
+        This release contains artifacts from the upstream repository's successful build.
+        
+        **Upstream Workflow Run:** ${{ steps.upstream.outputs.run_url }}
+        **Commit SHA:** ${{ steps.upstream.outputs.run_sha }}
+        **Build Date:** ${{ steps.upstream.outputs.run_date }}
+        
+        ## Remote Binaries
+        
+        \`\`\`json
+        "remote_binary": $(cat remote_binaries.json)
+        \`\`\`
+        
+        ## Files
+        
+        EOF
+        
+        # Add file information to release body
+        for file in downloads/*; do
+          if [ -f "$file" ]; then
+            FILENAME=$(basename "$file")
+            FILESIZE=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "unknown")
+            echo "- **$FILENAME** (Size: $FILESIZE bytes)" >> release_body.md
+          fi
+        done
+        
+        cat >> release_body.md << EOF
+        
+        ---
+        
+        *This release was automatically created by syncing with the upstream repository.*
+        EOF
+    
+    - name: Create GitHub release
+      if: steps.check_release.outputs.skip == 'false' && steps.artifacts.outputs.artifacts_found == 'true'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: upstream-${{ steps.upstream.outputs.run_id }}
+        name: "Upstream Sync - Run ${{ steps.upstream.outputs.run_id }}"
+        body_path: release_body.md
+        files: downloads/*
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Update latest release
+      if: steps.check_release.outputs.skip == 'false' && steps.artifacts.outputs.artifacts_found == 'true'
+      run: |
+        # Check if 'latest' tag exists and update it, or create it
+        LATEST_RELEASE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest" | jq -r '.id // empty')
+        
+        if [ -n "$LATEST_RELEASE" ] && [ "$LATEST_RELEASE" != "null" ]; then
+          echo "Updating existing 'latest' release"
+          # Delete the existing latest release
+          curl -X DELETE -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$LATEST_RELEASE"
+          
+          # Delete the latest tag
+          curl -X DELETE -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/latest" || true
+        fi
+        
+        # Create new latest release with updated remote_binaries URLs
+        LATEST_REMOTE_BINARIES=$(echo "$REMOTE_BINARIES" | jq --arg repo "${{ github.repository }}" 'map(.url = "https://github.com/\($repo)/releases/download/latest/\(.name)")')
+        
+        cat > latest_release_body.md << EOF
+        # Latest Upstream Build
+        
+        This release always contains the latest artifacts from the upstream repository's successful build.
+        
+        **Upstream Workflow Run:** ${{ steps.upstream.outputs.run_url }}
+        **Commit SHA:** ${{ steps.upstream.outputs.run_sha }}
+        **Build Date:** ${{ steps.upstream.outputs.run_date }}
+        
+        ## Remote Binaries
+        
+        \`\`\`json
+        "remote_binary": $LATEST_REMOTE_BINARIES
+        \`\`\`
+        
+        ## Files
+        
+        EOF
+        
+        # Add file information to latest release body
+        for file in downloads/*; do
+          if [ -f "$file" ]; then
+            FILENAME=$(basename "$file")
+            FILESIZE=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "unknown")
+            echo "- **$FILENAME** (Size: $FILESIZE bytes)" >> latest_release_body.md
+          fi
+        done
+        
+        cat >> latest_release_body.md << EOF
+        
+        ---
+        
+        *This release is automatically updated when new successful builds are available from the upstream repository.*
+        EOF
+    
+    - name: Create latest release
+      if: steps.check_release.outputs.skip == 'false' && steps.artifacts.outputs.artifacts_found == 'true'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest
+        name: "Latest Upstream Build"
+        body_path: latest_release_body.md
+        files: downloads/*
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Cleanup old releases (keep last 10)
+      if: steps.check_release.outputs.skip == 'false' && steps.artifacts.outputs.artifacts_found == 'true'
+      run: |
+        # Get all releases except 'latest'
+        RELEASES=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" | \
+          jq -r '.[] | select(.tag_name != "latest") | select(.tag_name | startswith("upstream-")) | .id' | \
+          tail -n +11)
+        
+        # Delete old releases
+        for release_id in $RELEASES; do
+          echo "Deleting old release: $release_id"
+          curl -X DELETE -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$release_id" || true
+        done

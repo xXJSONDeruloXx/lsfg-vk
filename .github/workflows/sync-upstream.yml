@@ -92,30 +92,18 @@ jobs:
           
           echo "Downloading artifact: $ARTIFACT_NAME (ID: $ARTIFACT_ID)"
           
-          # Download the artifact
+          # Download the artifact ZIP file
           curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -o "downloads/${ARTIFACT_NAME}.zip" \
             "https://api.github.com/repos/PancakeTAS/lsfg-vk/actions/artifacts/${ARTIFACT_ID}/zip"
           
-          # Extract the artifact
-          cd downloads
-          unzip -o "${ARTIFACT_NAME}.zip"
-          rm "${ARTIFACT_NAME}.zip"
+          # Calculate SHA256 hash of the ZIP file
+          SHA256=$(sha256sum "downloads/${ARTIFACT_NAME}.zip" | cut -d' ' -f1)
           
-          # Find the actual files in the extracted content
-          for file in *; do
-            if [ -f "$file" ] && [ "$file" != "${ARTIFACT_NAME}.zip" ]; then
-              # Calculate SHA256 hash
-              SHA256=$(sha256sum "$file" | cut -d' ' -f1)
-              
-              # Add to remote_binaries JSON
-              REMOTE_BINARIES=$(echo "$REMOTE_BINARIES" | jq --arg name "$file" --arg url "https://github.com/${{ github.repository }}/releases/download/upstream-${{ steps.upstream.outputs.run_id }}/$file" --arg hash "$SHA256" '. += [{name: $name, url: $url, sha256hash: $hash}]')
-              
-              echo "Processed file: $file (SHA256: $SHA256)"
-            fi
-          done
+          # Add to remote_binaries JSON
+          REMOTE_BINARIES=$(echo "$REMOTE_BINARIES" | jq --arg name "${ARTIFACT_NAME}.zip" --arg url "https://github.com/${{ github.repository }}/releases/download/upstream-${{ steps.upstream.outputs.run_id }}/${ARTIFACT_NAME}.zip" --arg hash "$SHA256" '. += [{name: $name, url: $url, sha256hash: $hash}]')
           
-          cd ..
+          echo "Processed file: ${ARTIFACT_NAME}.zip (SHA256: $SHA256)"
         done < artifacts.json
         
         echo "REMOTE_BINARIES<<EOF" >> $GITHUB_ENV

@@ -1,7 +1,7 @@
 name: Build lsfg-vk on Ubuntu
 on:
-  push:
-    branches: ["develop"]
+  pull_request:
+    branches: ["feat/config"]
 
 
 jobs:

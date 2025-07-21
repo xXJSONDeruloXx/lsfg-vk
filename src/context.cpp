@@ -55,13 +55,12 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         std::cerr << "lsfg-vk: Reloaded configuration for " << name.second << ":\n";
         if (!conf.dll.empty()) std::cerr << "  Using DLL from: " << conf.dll << '\n';
         std::cerr << "  Multiplier: " << conf.multiplier << '\n';
-        std::cerr << "  Target FPS: " << (conf.targetFps > 0 ? std::to_string(conf.targetFps) : "Disabled") << '\n';
         std::cerr << "  Flow Scale: " << conf.flowScale << '\n';
         std::cerr << "  Performance Mode: " << (conf.performance ? "Enabled" : "Disabled") << '\n';
         std::cerr << "  HDR Mode: " << (conf.hdr ? "Enabled" : "Disabled") << '\n';
         if (conf.e_present != 2) std::cerr << "  ! Present Mode: " << conf.e_present << '\n';
 
-        if (conf.multiplier <= 1.0f && conf.targetFps <= 0) return;
+        if (conf.multiplier <= 1.0f) return;
     }
     // we could take the format from the swapchain,
     // but honestly this is safer.
@@ -129,35 +128,12 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
     }
 }
 
-size_t LsContext::calculateGenerationCount() const {
-    const auto& conf = Config::activeConf;
-    
-    if (conf.targetFps <= 0) {
-        return static_cast<size_t>(std::max(1.0f, conf.multiplier - 1.0f));
-    }
-    
-    if (this->frameIdx == 0) {
-        return static_cast<size_t>(std::max(1.0f, conf.multiplier - 1.0f));
-    }
-    
-    const float targetFrameTime = 1000.0f / conf.targetFps;
-    const float dynamicMultiplier = this->smoothedFrameTime / targetFrameTime;
-    return static_cast<size_t>(std::max(0.0f, dynamicMultiplier - 1.0f));
-}
-
 VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, VkQueue queue,
         const std::vector<VkSemaphore>& gameRenderSemaphores, uint32_t presentIdx) {
     const auto& conf = Config::activeConf;
     auto& pass = this->passInfos.at(this->frameIdx % 8);
 
-    const auto currentTime = std::chrono::steady_clock::now();
-    if (this->frameIdx > 0) {
-        const auto deltaTime = std::chrono::duration<float, std::milli>(currentTime - this->lastFrameTime).count();
-        this->smoothedFrameTime = this->smoothedFrameTime * 0.9f + deltaTime * 0.1f;
-    }
-    this->lastFrameTime = currentTime;
-
-    const size_t generationCount = calculateGenerationCount();
+    const size_t generationCount = static_cast<size_t>(std::max(0.0f, conf.multiplier - 1.0f));
 
     // 1. copy swapchain image to frame_0/frame_1
     int preCopySemaphoreFd{};

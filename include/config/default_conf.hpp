@@ -11,7 +11,6 @@ const std::string DEFAULT_CONFIG = R"(version = 1
 # exe = "Game.exe"
 #
 # multiplier = 3.0    # fractional multipliers supported
-# target_fps = 60.0   # adaptive mode (0 = disabled)
 # flow_scale = 0.7
 # performance_mode = true
 # hdr_mode = false

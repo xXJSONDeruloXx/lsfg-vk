@@ -98,7 +98,6 @@ void Config::updateConfig(const std::string& file) {
             .enable = true,
             .dll = global.dll,
             .multiplier = toml::find_or(gameTable, "multiplier", 2.0f),
-            .targetFps = toml::find_or(gameTable, "target_fps", 0.0f),
             .flowScale = toml::find_or(gameTable, "flow_scale", 1.0F),
             .performance = toml::find_or(gameTable, "performance_mode", false),
             .hdr = toml::find_or(gameTable, "hdr_mode", false),
@@ -110,8 +109,6 @@ void Config::updateConfig(const std::string& file) {
         // validate the configuration
         if (game.multiplier < 1.0f)
             throw std::runtime_error("Multiplier cannot be less than 1.0");
-        if (game.targetFps < 0.0f)
-            throw std::runtime_error("Target FPS cannot be negative");
         if (game.flowScale < 0.25F || game.flowScale > 1.0F)
             throw std::runtime_error("Flow scale must be between 0.25 and 1.0");
         games[exe] = std::move(game);
@@ -128,7 +125,6 @@ Configuration Config::getConfig(const std::pair<std::string, std::string>& name)
         Configuration conf{
             .enable = true,
             .multiplier = 2.0f,
-            .targetFps = 0.0f,
             .flowScale = 1.0F,
             .e_present = VkPresentModeKHR::VK_PRESENT_MODE_FIFO_KHR
         };
@@ -137,8 +133,6 @@ Configuration Config::getConfig(const std::pair<std::string, std::string>& name)
         if (dll) conf.dll = std::string(dll);
         const char* multiplier = std::getenv("LSFG_MULTIPLIER");
         if (multiplier) conf.multiplier = std::stof(multiplier);
-        const char* targetFps = std::getenv("LSFG_TARGET_FPS");
-        if (targetFps) conf.targetFps = std::stof(targetFps);
         const char* flow_scale = std::getenv("LSFG_FLOW_SCALE");
         if (flow_scale) conf.flowScale = std::stof(flow_scale);
         const char* performance = std::getenv("LSFG_PERFORMANCE_MODE");

@@ -63,6 +63,7 @@ private:
 
     Mini::CommandPool cmdPool;
     uint64_t frameIdx{0};
+    float fractionalAccumulator{0.0f}; // Accumulates fractional frame parts
 
     struct RenderPassInfo {
         Mini::CommandBuffer preCopyBuf; // copy from swapchain image to frame_0/frame_1

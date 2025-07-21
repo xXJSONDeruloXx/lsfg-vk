@@ -10,7 +10,8 @@ const std::string DEFAULT_CONFIG = R"(version = 1
 # [[game]] # example entry
 # exe = "Game.exe"
 #
-# multiplier = 3
+# multiplier = 3.0    # fractional multipliers supported
+# target_fps = 60.0   # adaptive mode (0 = disabled)
 # flow_scale = 0.7
 # performance_mode = true
 # hdr_mode = false
@@ -20,13 +21,13 @@ const std::string DEFAULT_CONFIG = R"(version = 1
 [[game]] # default vkcube entry
 exe = "vkcube"
 
-multiplier = 4
+multiplier = 4.0
 performance_mode = true
 
 [[game]] # default benchmark entry
 exe = "benchmark"
 
-multiplier = 4
+multiplier = 4.0
 performance_mode = false
 
 [[game]] # override Genshin Impact

@@ -17,7 +17,9 @@ namespace Config {
         std::string dll;
 
         /// The frame generation muliplier
-        size_t multiplier{2};
+        float multiplier{2.0f};
+        /// Target FPS for adaptive mode (0 = disabled)
+        float targetFps{0.0f};
         /// The internal flow scale factor
         float flowScale{1.0F};
         /// Whether performance mode is enabled

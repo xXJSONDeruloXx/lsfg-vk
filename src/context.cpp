@@ -55,12 +55,13 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         std::cerr << "lsfg-vk: Reloaded configuration for " << name.second << ":\n";
         if (!conf.dll.empty()) std::cerr << "  Using DLL from: " << conf.dll << '\n';
         std::cerr << "  Multiplier: " << conf.multiplier << '\n';
+        std::cerr << "  Target FPS: " << (conf.targetFps > 0 ? std::to_string(conf.targetFps) : "Disabled") << '\n';
         std::cerr << "  Flow Scale: " << conf.flowScale << '\n';
         std::cerr << "  Performance Mode: " << (conf.performance ? "Enabled" : "Disabled") << '\n';
         std::cerr << "  HDR Mode: " << (conf.hdr ? "Enabled" : "Disabled") << '\n';
         if (conf.e_present != 2) std::cerr << "  ! Present Mode: " << conf.e_present << '\n';
 
-        if (conf.multiplier <= 1) return;
+        if (conf.multiplier <= 1.0f && conf.targetFps <= 0) return;
     }
     // we could take the format from the swapchain,
     // but honestly this is safer.
@@ -77,8 +78,8 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         extent, format, VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
         &fds.at(1));
 
-    std::vector<int> outFds(conf.multiplier - 1);
-    for (size_t i = 0; i < (conf.multiplier - 1); ++i)
+    std::vector<int> outFds(static_cast<size_t>(std::max(1.0f, conf.multiplier - 1.0f)));
+    for (size_t i = 0; i < outFds.size(); ++i)
         this->out_n.emplace_back(info.device, info.physicalDevice,
             extent, format,
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
@@ -98,7 +99,7 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
 
     lsfgInitialize(
         Utils::getDeviceUUID(info.physicalDevice),
-        conf.hdr, 1.0F / conf.flowScale, conf.multiplier - 1,
+        conf.hdr, 1.0F / conf.flowScale, static_cast<uint64_t>(std::max(1.0f, conf.multiplier - 1.0f)),
         [](const std::string& name) {
             auto dxbc = Extract::getShader(name);
             auto spirv = Extract::translateShader(dxbc);
@@ -119,18 +120,44 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
     this->cmdPool = Mini::CommandPool(info.device, info.queue.first);
     for (size_t i = 0; i < 8; i++) {
         auto& pass = this->passInfos.at(i);
-        pass.renderSemaphores.resize(conf.multiplier - 1);
-        pass.acquireSemaphores.resize(conf.multiplier - 1);
-        pass.postCopyBufs.resize(conf.multiplier - 1);
-        pass.postCopySemaphores.resize(conf.multiplier - 1);
-        pass.prevPostCopySemaphores.resize(conf.multiplier - 1);
+        const size_t maxFrames = static_cast<size_t>(std::max(1.0f, conf.multiplier - 1.0f));
+        pass.renderSemaphores.resize(maxFrames);
+        pass.acquireSemaphores.resize(maxFrames);
+        pass.postCopyBufs.resize(maxFrames);
+        pass.postCopySemaphores.resize(maxFrames);
+        pass.prevPostCopySemaphores.resize(maxFrames);
     }
+}
+
+size_t LsContext::calculateGenerationCount() const {
+    const auto& conf = Config::activeConf;
+    
+    if (conf.targetFps <= 0) {
+        return static_cast<size_t>(std::max(1.0f, conf.multiplier - 1.0f));
+    }
+    
+    if (this->frameIdx == 0) {
+        return static_cast<size_t>(std::max(1.0f, conf.multiplier - 1.0f));
+    }
+    
+    const float targetFrameTime = 1000.0f / conf.targetFps;
+    const float dynamicMultiplier = this->smoothedFrameTime / targetFrameTime;
+    return static_cast<size_t>(std::max(0.0f, dynamicMultiplier - 1.0f));
 }
 
 VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, VkQueue queue,
         const std::vector<VkSemaphore>& gameRenderSemaphores, uint32_t presentIdx) {
     const auto& conf = Config::activeConf;
     auto& pass = this->passInfos.at(this->frameIdx % 8);
+
+    const auto currentTime = std::chrono::steady_clock::now();
+    if (this->frameIdx > 0) {
+        const auto deltaTime = std::chrono::duration<float, std::milli>(currentTime - this->lastFrameTime).count();
+        this->smoothedFrameTime = this->smoothedFrameTime * 0.9f + deltaTime * 0.1f;
+    }
+    this->lastFrameTime = currentTime;
+
+    const size_t generationCount = calculateGenerationCount();
 
     // 1. copy swapchain image to frame_0/frame_1
     int preCopySemaphoreFd{};
@@ -158,20 +185,22 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
           pass.preCopySemaphores.at(1).handle() });
 
     // 2. render intermediary frames
-    std::vector<int> renderSemaphoreFds(conf.multiplier - 1);
-    for (size_t i = 0; i < (conf.multiplier - 1); ++i)
+    std::vector<int> renderSemaphoreFds(generationCount);
+    for (size_t i = 0; i < generationCount; ++i)
         pass.renderSemaphores.at(i) = Mini::Semaphore(info.device, &renderSemaphoreFds.at(i));
 
-    if (conf.performance)
-        LSFG_3_1P::presentContext(*this->lsfgCtxId,
-            preCopySemaphoreFd,
-            renderSemaphoreFds);
-    else
-        LSFG_3_1::presentContext(*this->lsfgCtxId,
-            preCopySemaphoreFd,
-            renderSemaphoreFds);
+    if (generationCount > 0) {
+        if (conf.performance)
+            LSFG_3_1P::presentContext(*this->lsfgCtxId,
+                preCopySemaphoreFd,
+                renderSemaphoreFds);
+        else
+            LSFG_3_1::presentContext(*this->lsfgCtxId,
+                preCopySemaphoreFd,
+                renderSemaphoreFds);
+    }
 
-    for (size_t i = 0; i < (conf.multiplier - 1); i++) {
+    for (size_t i = 0; i < generationCount; i++) {
         // 3. acquire next swapchain image
         pass.acquireSemaphores.at(i) = Mini::Semaphore(info.device);
         uint32_t imageIdx{};
@@ -219,20 +248,37 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
     }
 
     // 6. present actual next frame
-    VkSemaphore lastPrevPostCopySemaphore =
-        pass.prevPostCopySemaphores.at(conf.multiplier - 1 - 1).handle();
-    const VkPresentInfoKHR presentInfo{
-        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &lastPrevPostCopySemaphore,
-        .swapchainCount = 1,
-        .pSwapchains = &this->swapchain,
-        .pImageIndices = &presentIdx,
-    };
-    auto res = Layer::ovkQueuePresentKHR(queue, &presentInfo);
-    if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR)
-        throw LSFG::vulkan_error(res, "Failed to present swapchain image");
+    if (generationCount > 0) {
+        VkSemaphore lastPrevPostCopySemaphore =
+            pass.prevPostCopySemaphores.at(generationCount - 1).handle();
+        const VkPresentInfoKHR presentInfo{
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &lastPrevPostCopySemaphore,
+            .swapchainCount = 1,
+            .pSwapchains = &this->swapchain,
+            .pImageIndices = &presentIdx,
+        };
+        auto res = Layer::ovkQueuePresentKHR(queue, &presentInfo);
+        if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR)
+            throw LSFG::vulkan_error(res, "Failed to present swapchain image");
 
-    this->frameIdx++;
-    return res;
+        this->frameIdx++;
+        return res;
+    } else {
+        const VkPresentInfoKHR presentInfo{
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = static_cast<uint32_t>(gameRenderSemaphores.size()),
+            .pWaitSemaphores = gameRenderSemaphores.data(),
+            .swapchainCount = 1,
+            .pSwapchains = &this->swapchain,
+            .pImageIndices = &presentIdx,
+        };
+        auto res = Layer::ovkQueuePresentKHR(queue, &presentInfo);
+        if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR)
+            throw LSFG::vulkan_error(res, "Failed to present swapchain image");
+
+        this->frameIdx++;
+        return res;
+    }
 }

@@ -76,10 +76,10 @@ void Benchmark::run(uint32_t width, uint32_t height) {
 
     const auto perIteration = static_cast<float>(ms) / static_cast<float>(iterations);
 
-    const uint64_t totalGen = (conf.multiplier - 1) * iterations;
+    const uint64_t totalGen = static_cast<uint64_t>(std::max(1.0f, conf.multiplier - 1.0f)) * iterations;
     const auto genFps = static_cast<float>(totalGen) / (static_cast<float>(ms) / 1000.0F);
 
-    const uint64_t totalFrames = iterations * conf.multiplier;
+    const uint64_t totalFrames = static_cast<uint64_t>(iterations * conf.multiplier);
     const auto totalFps = static_cast<float>(totalFrames) / (static_cast<float>(ms) / 1000.0F);
 
     std::cerr << "lsfg-vk: Benchmark completed in " << ms << " ms\n";

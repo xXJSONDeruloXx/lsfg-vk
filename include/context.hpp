@@ -9,6 +9,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -63,6 +64,12 @@ private:
 
     Mini::CommandPool cmdPool;
     uint64_t frameIdx{0};
+
+    using TimePoint = std::chrono::steady_clock::time_point;
+    TimePoint lastFrameTime{};
+    float smoothedFrameTime{16.67f};
+
+    size_t calculateGenerationCount() const;
 
     struct RenderPassInfo {
         Mini::CommandBuffer preCopyBuf; // copy from swapchain image to frame_0/frame_1

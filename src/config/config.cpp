@@ -231,4 +231,4 @@ uint64_t Config::calculateVariableGenerationCount(float multiplier, uint64_t fra
     
     return baseFrames + (generateExtra ? 1 : 0);
 }
-}
+

@@ -161,16 +161,18 @@ Configuration Config::getConfig(const std::pair<std::string, std::string>& name)
 }
 
 uint64_t Config::calculateGenerationCount(float multiplier) {
-    // For fractional multipliers, we need to determine how many intermediate frames
-    // to generate to approximate the target multiplier.
+    // For true fractional multipliers, we need a more sophisticated approach.
+    // The current frame generation system generates a fixed number of intermediate
+    // frames between every pair of real frames.
     // 
-    // The multiplier represents the total output frames per input frame.
-    // So for multiplier 2.5, we want 2.5 total frames per 1 input frame,
-    // which means 1.5 intermediate frames.
+    // For now, we'll use the ceiling of (multiplier - 1) to ensure we generate
+    // enough frames to at least meet the target multiplier. A future implementation
+    // could use temporal dithering or variable frame generation for exact fractional support.
     // 
-    // For simplicity, we'll round to the nearest integer for now.
-    // A more sophisticated approach could use temporal dithering,
-    // but this provides a solid foundation for fractional support.
+    // Examples:
+    // - multiplier 2.3 -> generate 2 frames (2.3 - 1 = 1.3, ceil = 2)
+    // - multiplier 2.7 -> generate 2 frames (2.7 - 1 = 1.7, ceil = 2) 
+    // - multiplier 3.1 -> generate 3 frames (3.1 - 1 = 2.1, ceil = 3)
     
     if (multiplier < 1.0F) {
         return 0; // No frame generation
@@ -179,9 +181,54 @@ uint64_t Config::calculateGenerationCount(float multiplier) {
     // Calculate the number of intermediate frames needed
     float intermediateFrames = multiplier - 1.0F;
     
-    // Round to nearest integer
-    // For values like 2.3, we get 1 intermediate frame
-    // For values like 2.7, we get 2 intermediate frames
-    return static_cast<uint64_t>(std::round(intermediateFrames));
+    // Use ceiling to ensure we meet or exceed the target
+    // This will generate slightly more frames than requested for fractional values,
+    // but provides a foundation for future exact fractional implementation
+    return static_cast<uint64_t>(std::ceil(intermediateFrames));
+}
+
+uint64_t Config::calculateMaxGenerationCount(float multiplier) {
+    // For variable frame generation, we need to allocate resources for the maximum
+    // number of frames that might be generated in any single frame cycle.
+    // This is the ceiling of (multiplier - 1).
+    
+    if (multiplier < 1.0F) {
+        return 0;
+    }
+    
+    float intermediateFrames = multiplier - 1.0F;
+    return static_cast<uint64_t>(std::ceil(intermediateFrames));
+}
+
+uint64_t Config::calculateVariableGenerationCount(float multiplier, uint64_t frameIndex) {
+    // For true fractional frame generation, we use temporal dithering.
+    // This varies the number of generated frames over time to achieve 
+    // the exact target multiplier on average.
+    //
+    // Example: multiplier 2.5 means we want 1.5 intermediate frames on average
+    // - Sometimes generate 1 frame (for 2x total)
+    // - Sometimes generate 2 frames (for 3x total)  
+    // - Over time, average approaches 2.5x
+    
+    if (multiplier < 1.0F) {
+        return 0; // No frame generation
+    }
+    
+    float intermediateFrames = multiplier - 1.0F;
+    uint64_t baseFrames = static_cast<uint64_t>(intermediateFrames); // Floor
+    float fractionalPart = intermediateFrames - static_cast<float>(baseFrames);
+    
+    // Use temporal dithering based on frame index
+    // This creates a repeating pattern that achieves the target average
+    if (fractionalPart == 0.0F) {
+        return baseFrames; // Perfect integer, no dithering needed
+    }
+    
+    // Simple temporal dithering: every N frames, generate an extra frame
+    // where N = 1/fractionalPart
+    uint64_t period = static_cast<uint64_t>(1.0F / fractionalPart);
+    bool generateExtra = (frameIndex % period) == 0;
+    
+    return baseFrames + (generateExtra ? 1 : 0);
 }
 }

@@ -77,8 +77,8 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         extent, format, VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
         &fds.at(1));
 
-    std::vector<int> outFds(Config::calculateGenerationCount(conf.multiplier));
-    for (size_t i = 0; i < Config::calculateGenerationCount(conf.multiplier); ++i)
+    std::vector<int> outFds(Config::calculateMaxGenerationCount(conf.multiplier));
+    for (size_t i = 0; i < Config::calculateMaxGenerationCount(conf.multiplier); ++i)
         this->out_n.emplace_back(info.device, info.physicalDevice,
             extent, format,
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
@@ -98,7 +98,7 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
 
     lsfgInitialize(
         Utils::getDeviceUUID(info.physicalDevice),
-        conf.hdr, 1.0F / conf.flowScale, Config::calculateGenerationCount(conf.multiplier),
+        conf.hdr, 1.0F / conf.flowScale, Config::calculateMaxGenerationCount(conf.multiplier),
         [](const std::string& name) {
             auto dxbc = Extract::getShader(name);
             auto spirv = Extract::translateShader(dxbc);
@@ -119,12 +119,12 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
     this->cmdPool = Mini::CommandPool(info.device, info.queue.first);
     for (size_t i = 0; i < 8; i++) {
         auto& pass = this->passInfos.at(i);
-        const auto generationCount = Config::calculateGenerationCount(conf.multiplier);
-        pass.renderSemaphores.resize(generationCount);
-        pass.acquireSemaphores.resize(generationCount);
-        pass.postCopyBufs.resize(generationCount);
-        pass.postCopySemaphores.resize(generationCount);
-        pass.prevPostCopySemaphores.resize(generationCount);
+        const auto maxGenerationCount = Config::calculateMaxGenerationCount(conf.multiplier);
+        pass.renderSemaphores.resize(maxGenerationCount);
+        pass.acquireSemaphores.resize(maxGenerationCount);
+        pass.postCopyBufs.resize(maxGenerationCount);
+        pass.postCopySemaphores.resize(maxGenerationCount);
+        pass.prevPostCopySemaphores.resize(maxGenerationCount);
     }
 }
 
@@ -159,8 +159,9 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
           pass.preCopySemaphores.at(1).handle() });
 
     // 2. render intermediary frames
-    std::vector<int> renderSemaphoreFds(Config::calculateGenerationCount(conf.multiplier));
-    for (size_t i = 0; i < Config::calculateGenerationCount(conf.multiplier); ++i)
+    const auto currentGenerationCount = Config::calculateVariableGenerationCount(conf.multiplier, this->frameIdx);
+    std::vector<int> renderSemaphoreFds(currentGenerationCount);
+    for (size_t i = 0; i < currentGenerationCount; ++i)
         pass.renderSemaphores.at(i) = Mini::Semaphore(info.device, &renderSemaphoreFds.at(i));
 
     if (conf.performance)
@@ -172,7 +173,7 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
             preCopySemaphoreFd,
             renderSemaphoreFds);
 
-    for (size_t i = 0; i < Config::calculateGenerationCount(conf.multiplier); i++) {
+    for (size_t i = 0; i < currentGenerationCount; i++) {
         // 3. acquire next swapchain image
         pass.acquireSemaphores.at(i) = Mini::Semaphore(info.device);
         uint32_t imageIdx{};
@@ -220,9 +221,8 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
     }
 
     // 6. present actual next frame
-    const auto generationCount = Config::calculateGenerationCount(conf.multiplier);
     VkSemaphore lastPrevPostCopySemaphore =
-        pass.prevPostCopySemaphores.at(generationCount - 1).handle();
+        pass.prevPostCopySemaphores.at(currentGenerationCount - 1).handle();
     const VkPresentInfoKHR presentInfo{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,

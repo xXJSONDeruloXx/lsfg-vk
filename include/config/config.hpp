@@ -57,6 +57,25 @@ namespace Config {
     uint64_t calculateGenerationCount(float multiplier);
 
     ///
+    /// Calculate the maximum generation count needed for temporal dithering.
+    /// This is used for resource allocation.
+    ///
+    /// @param multiplier The frame generation multiplier (e.g., 2.5 for 2.5x)
+    /// @return The maximum number of intermediate frames that might be needed
+    ///
+    uint64_t calculateMaxGenerationCount(float multiplier);
+
+    ///
+    /// Calculate variable generation count for true fractional multipliers.
+    /// This version takes a frame counter to enable temporal dithering.
+    ///
+    /// @param multiplier The frame generation multiplier (e.g., 2.5 for 2.5x)  
+    /// @param frameIndex The current frame index for temporal variation
+    /// @return The number of intermediate frames to generate for this frame
+    ///
+    uint64_t calculateVariableGenerationCount(float multiplier, uint64_t frameIndex);
+
+    ///
     /// Get the configuration for a game.
     ///
     /// @param name The name of the executable to fetch.

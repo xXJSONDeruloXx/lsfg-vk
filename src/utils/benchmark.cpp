@@ -41,7 +41,7 @@ void Benchmark::run(uint32_t width, uint32_t height) {
     Extract::extractShaders();
     lsfgInitialize(
         deviceUUID, // some magic number if not given
-        conf.hdr, 1.0F / conf.flowScale, Config::calculateGenerationCount(conf.multiplier),
+        conf.hdr, 1.0F / conf.flowScale, Config::calculateMaxGenerationCount(conf.multiplier),
         [](const std::string& name) -> std::vector<uint8_t> {
             auto dxbc = Extract::getShader(name);
             auto spirv = Extract::translateShader(dxbc);
@@ -76,7 +76,11 @@ void Benchmark::run(uint32_t width, uint32_t height) {
 
     const auto perIteration = static_cast<float>(ms) / static_cast<float>(iterations);
 
-    const uint64_t totalGen = Config::calculateGenerationCount(conf.multiplier) * iterations;
+    // Calculate actual frames generated using the variable generation count
+    uint64_t totalGen = 0;
+    for (uint64_t i = 0; i < iterations; ++i) {
+        totalGen += Config::calculateVariableGenerationCount(conf.multiplier, i);
+    }
     const auto genFps = static_cast<float>(totalGen) / (static_cast<float>(ms) / 1000.0F);
 
     const uint64_t totalFrames = static_cast<uint64_t>(iterations * conf.multiplier);

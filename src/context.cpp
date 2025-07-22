@@ -78,7 +78,7 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         extent, format, VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
         &fds.at(1));
 
-    std::vector<int> outFds(static_cast<size_t>(std::ceil(std::max(1.0f, conf.multiplier - 1.0f))));
+    std::vector<int> outFds(static_cast<size_t>(std::ceil(std::max(1.0f, conf.multiplier - 1.0f))) + 1);
     for (size_t i = 0; i < outFds.size(); ++i)
         this->out_n.emplace_back(info.device, info.physicalDevice,
             extent, format,
@@ -99,7 +99,7 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
 
     lsfgInitialize(
         Utils::getDeviceUUID(info.physicalDevice),
-        conf.hdr, 1.0F / conf.flowScale, static_cast<uint64_t>(std::ceil(std::max(1.0f, conf.multiplier - 1.0f))),
+        conf.hdr, 1.0F / conf.flowScale, static_cast<uint64_t>(std::ceil(std::max(1.0f, conf.multiplier - 1.0f))) + 1,
         [](const std::string& name) {
             auto dxbc = Extract::getShader(name);
             auto spirv = Extract::translateShader(dxbc);
@@ -120,7 +120,7 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
     this->cmdPool = Mini::CommandPool(info.device, info.queue.first);
     for (size_t i = 0; i < 8; i++) {
         auto& pass = this->passInfos.at(i);
-        const size_t maxFrames = static_cast<size_t>(std::ceil(std::max(1.0f, conf.multiplier - 1.0f)));
+        const size_t maxFrames = static_cast<size_t>(std::ceil(std::max(1.0f, conf.multiplier - 1.0f))) + 1;
         pass.renderSemaphores.resize(maxFrames);
         pass.acquireSemaphores.resize(maxFrames);
         pass.postCopyBufs.resize(maxFrames);
@@ -141,6 +141,10 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
         
         generationCount = static_cast<size_t>(this->fractionalAccumulator);
         this->fractionalAccumulator -= static_cast<float>(generationCount);
+        
+        // Ensure we don't exceed allocated vector sizes
+        const size_t maxFrames = static_cast<size_t>(std::ceil(std::max(1.0f, conf.multiplier - 1.0f))) + 1;
+        generationCount = std::min(generationCount, maxFrames - 1);
     }
 
     // 1. copy swapchain image to frame_0/frame_1

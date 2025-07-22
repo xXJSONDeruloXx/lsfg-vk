@@ -2,6 +2,7 @@
 #include "config/config.hpp"
 #include "extract/extract.hpp"
 #include "extract/trans.hpp"
+#include "utils/fractional.hpp"
 
 #include <vulkan/vulkan_core.h>
 #include <lsfg_3_1.hpp>
@@ -40,8 +41,8 @@ void Benchmark::run(uint32_t width, uint32_t height) {
 
     Extract::extractShaders();
     lsfgInitialize(
-        deviceUUID, // some magic number if not given
-        conf.hdr, 1.0F / conf.flowScale, conf.multiplier - 1,
+        deviceUUID,
+        conf.hdr, 1.0F / conf.flowScale, Utils::FractionalGenerator::getMaxGenerationCount(conf.multiplier),
         [](const std::string& name) -> std::vector<uint8_t> {
             auto dxbc = Extract::getShader(name);
             auto spirv = Extract::translateShader(dxbc);
@@ -76,10 +77,10 @@ void Benchmark::run(uint32_t width, uint32_t height) {
 
     const auto perIteration = static_cast<float>(ms) / static_cast<float>(iterations);
 
-    const uint64_t totalGen = (conf.multiplier - 1) * iterations;
+    const auto totalGen = static_cast<uint64_t>((conf.multiplier - 1.0) * iterations);
     const auto genFps = static_cast<float>(totalGen) / (static_cast<float>(ms) / 1000.0F);
 
-    const uint64_t totalFrames = iterations * conf.multiplier;
+    const auto totalFrames = static_cast<uint64_t>(iterations * conf.multiplier);
     const auto totalFps = static_cast<float>(totalFrames) / (static_cast<float>(ms) / 1000.0F);
 
     std::cerr << "lsfg-vk: Benchmark completed in " << ms << " ms\n";

@@ -17,7 +17,7 @@ namespace Config {
         std::string dll;
 
         /// The frame generation muliplier
-        size_t multiplier{2};
+        double multiplier{2.0};
         /// The internal flow scale factor
         float flowScale{1.0F};
         /// Whether performance mode is enabled

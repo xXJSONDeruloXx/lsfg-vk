@@ -5,6 +5,7 @@
 #include "mini/commandpool.hpp"
 #include "mini/image.hpp"
 #include "mini/semaphore.hpp"
+#include "utils/fractional.hpp"
 
 #include <vulkan/vulkan_core.h>
 
@@ -57,24 +58,25 @@ private:
     std::vector<VkImage> swapchainImages;
     VkExtent2D extent;
 
-    std::shared_ptr<int32_t> lsfgCtxId; // lsfg context id
-    Mini::Image frame_0, frame_1; // frames shared with lsfg. write to frame_0 when fc % 2 == 0
-    std::vector<Mini::Image> out_n; // output images shared with lsfg, indexed by framegen id
+    std::shared_ptr<int32_t> lsfgCtxId;
+    Mini::Image frame_0, frame_1;
+    std::vector<Mini::Image> out_n;
 
     Mini::CommandPool cmdPool;
     uint64_t frameIdx{0};
+    Utils::FractionalGenerator frameGen;
 
     struct RenderPassInfo {
-        Mini::CommandBuffer preCopyBuf; // copy from swapchain image to frame_0/frame_1
-        std::array<Mini::Semaphore, 2> preCopySemaphores; // signal when preCopyBuf is done
+        Mini::CommandBuffer preCopyBuf;
+        std::array<Mini::Semaphore, 2> preCopySemaphores;
 
-        std::vector<Mini::Semaphore> renderSemaphores; // signal when lsfg is done with frame n
+        std::vector<Mini::Semaphore> renderSemaphores;
 
-        std::vector<Mini::Semaphore> acquireSemaphores; // signal for swapchain image n
+        std::vector<Mini::Semaphore> acquireSemaphores;
 
-        std::vector<Mini::CommandBuffer> postCopyBufs; // copy from out_n to swapchain image
-        std::vector<Mini::Semaphore> postCopySemaphores; // signal when postCopyBuf is done
-        std::vector<Mini::Semaphore> prevPostCopySemaphores; // signal for previous postCopyBuf
-    }; // data for a single render pass
-    std::array<RenderPassInfo, 8> passInfos; // allocate 8 because why not
+        std::vector<Mini::CommandBuffer> postCopyBufs;
+        std::vector<Mini::Semaphore> postCopySemaphores;
+        std::vector<Mini::Semaphore> prevPostCopySemaphores;
+    };
+    std::array<RenderPassInfo, 8> passInfos;
 };

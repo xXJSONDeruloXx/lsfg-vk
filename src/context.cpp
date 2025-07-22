@@ -3,6 +3,7 @@
 #include "common/exception.hpp"
 #include "extract/extract.hpp"
 #include "extract/trans.hpp"
+#include "utils/fractional.hpp"
 #include "utils/utils.hpp"
 #include "hooks.hpp"
 #include "layer.hpp"
@@ -26,7 +27,7 @@
 LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         VkExtent2D extent, const std::vector<VkImage>& swapchainImages)
         : swapchain(swapchain), swapchainImages(swapchainImages),
-          extent(extent) {
+          extent(extent), frameGen(Config::activeConf.multiplier) {
     // get updated configuration
     auto& conf = Config::activeConf;
     if (!conf.config_file.empty()
@@ -60,10 +61,8 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         std::cerr << "  HDR Mode: " << (conf.hdr ? "Enabled" : "Disabled") << '\n';
         if (conf.e_present != 2) std::cerr << "  ! Present Mode: " << conf.e_present << '\n';
 
-        if (conf.multiplier <= 1) return;
+        if (conf.multiplier <= 1.0) return;
     }
-    // we could take the format from the swapchain,
-    // but honestly this is safer.
     const VkFormat format = conf.hdr
         ? VK_FORMAT_R8G8B8A8_UNORM
         : VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -98,7 +97,7 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
 
     lsfgInitialize(
         Utils::getDeviceUUID(info.physicalDevice),
-        conf.hdr, 1.0F / conf.flowScale, conf.multiplier - 1,
+        conf.hdr, 1.0F / conf.flowScale, Utils::FractionalGenerator::getMaxGenerationCount(conf.multiplier),
         [](const std::string& name) {
             auto dxbc = Extract::getShader(name);
             auto spirv = Extract::translateShader(dxbc);
@@ -117,13 +116,14 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
 
     // prepare render passes
     this->cmdPool = Mini::CommandPool(info.device, info.queue.first);
+    const auto maxGenCount = Utils::FractionalGenerator::getMaxGenerationCount(conf.multiplier);
     for (size_t i = 0; i < 8; i++) {
         auto& pass = this->passInfos.at(i);
-        pass.renderSemaphores.resize(conf.multiplier - 1);
-        pass.acquireSemaphores.resize(conf.multiplier - 1);
-        pass.postCopyBufs.resize(conf.multiplier - 1);
-        pass.postCopySemaphores.resize(conf.multiplier - 1);
-        pass.prevPostCopySemaphores.resize(conf.multiplier - 1);
+        pass.renderSemaphores.resize(maxGenCount);
+        pass.acquireSemaphores.resize(maxGenCount);
+        pass.postCopyBufs.resize(maxGenCount);
+        pass.postCopySemaphores.resize(maxGenCount);
+        pass.prevPostCopySemaphores.resize(maxGenCount);
     }
 }
 
@@ -158,8 +158,9 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
           pass.preCopySemaphores.at(1).handle() });
 
     // 2. render intermediary frames
-    std::vector<int> renderSemaphoreFds(conf.multiplier - 1);
-    for (size_t i = 0; i < (conf.multiplier - 1); ++i)
+    const auto framesToGenerate = this->frameGen.getFramesToGenerate();
+    std::vector<int> renderSemaphoreFds(framesToGenerate);
+    for (size_t i = 0; i < framesToGenerate; ++i)
         pass.renderSemaphores.at(i) = Mini::Semaphore(info.device, &renderSemaphoreFds.at(i));
 
     if (conf.performance)
@@ -171,7 +172,7 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
             preCopySemaphoreFd,
             renderSemaphoreFds);
 
-    for (size_t i = 0; i < (conf.multiplier - 1); i++) {
+    for (size_t i = 0; i < framesToGenerate; i++) {
         // 3. acquire next swapchain image
         pass.acquireSemaphores.at(i) = Mini::Semaphore(info.device);
         uint32_t imageIdx{};

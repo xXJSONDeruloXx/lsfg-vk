@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <exception>
 #include <stdexcept>
+#include <cmath>
 #include <iostream>
 #include <optional>
 #include <fstream>
@@ -97,7 +98,7 @@ void Config::updateConfig(const std::string& file) {
         Configuration game{
             .enable = true,
             .dll = global.dll,
-            .multiplier = toml::find_or(gameTable, "multiplier", 2U),
+            .multiplier = toml::find_or(gameTable, "multiplier", 2.0F),
             .flowScale = toml::find_or(gameTable, "flow_scale", 1.0F),
             .performance = toml::find_or(gameTable, "performance_mode", false),
             .hdr = toml::find_or(gameTable, "hdr_mode", false),
@@ -107,8 +108,8 @@ void Config::updateConfig(const std::string& file) {
         };
 
         // validate the configuration
-        if (game.multiplier < 1)
-            throw std::runtime_error("Multiplier cannot be less than 1");
+        if (game.multiplier < 1.0F)
+            throw std::runtime_error("Multiplier cannot be less than 1.0");
         if (game.flowScale < 0.25F || game.flowScale > 1.0F)
             throw std::runtime_error("Flow scale must be between 0.25 and 1.0");
         games[exe] = std::move(game);
@@ -132,7 +133,7 @@ Configuration Config::getConfig(const std::pair<std::string, std::string>& name)
         const char* dll = std::getenv("LSFG_DLL_PATH");
         if (dll) conf.dll = std::string(dll);
         const char* multiplier = std::getenv("LSFG_MULTIPLIER");
-        if (multiplier) conf.multiplier = std::stoul(multiplier);
+        if (multiplier) conf.multiplier = std::stof(multiplier);
         const char* flow_scale = std::getenv("LSFG_FLOW_SCALE");
         if (flow_scale) conf.flowScale = std::stof(flow_scale);
         const char* performance = std::getenv("LSFG_PERFORMANCE_MODE");
@@ -157,4 +158,30 @@ Configuration Config::getConfig(const std::pair<std::string, std::string>& name)
         return it->second;
 
     return globalConf;
+}
+
+uint64_t Config::calculateGenerationCount(float multiplier) {
+    // For fractional multipliers, we need to determine how many intermediate frames
+    // to generate to approximate the target multiplier.
+    // 
+    // The multiplier represents the total output frames per input frame.
+    // So for multiplier 2.5, we want 2.5 total frames per 1 input frame,
+    // which means 1.5 intermediate frames.
+    // 
+    // For simplicity, we'll round to the nearest integer for now.
+    // A more sophisticated approach could use temporal dithering,
+    // but this provides a solid foundation for fractional support.
+    
+    if (multiplier < 1.0F) {
+        return 0; // No frame generation
+    }
+    
+    // Calculate the number of intermediate frames needed
+    float intermediateFrames = multiplier - 1.0F;
+    
+    // Round to nearest integer
+    // For values like 2.3, we get 1 intermediate frame
+    // For values like 2.7, we get 2 intermediate frames
+    return static_cast<uint64_t>(std::round(intermediateFrames));
+}
 }

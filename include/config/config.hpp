@@ -17,7 +17,7 @@ namespace Config {
         std::string dll;
 
         /// The frame generation muliplier
-        size_t multiplier{2};
+        float multiplier{2.0F};
         /// The internal flow scale factor
         float flowScale{1.0F};
         /// Whether performance mode is enabled
@@ -46,6 +46,15 @@ namespace Config {
     /// @throws std::runtime_error if an error occurs while loading the configuration file.
     ///
     void updateConfig(const std::string& file);
+
+    ///
+    /// Calculate the generation count (number of intermediate frames to generate)
+    /// from a fractional multiplier value.
+    ///
+    /// @param multiplier The frame generation multiplier (e.g., 2.5 for 2.5x)
+    /// @return The number of intermediate frames to generate
+    ///
+    uint64_t calculateGenerationCount(float multiplier);
 
     ///
     /// Get the configuration for a game.

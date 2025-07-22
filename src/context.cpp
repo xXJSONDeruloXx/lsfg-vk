@@ -117,7 +117,6 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
 
     // prepare render passes
     this->cmdPool = Mini::CommandPool(info.device, info.queue.first);
-    const auto maxGenCount = Utils::FractionalGenerator::getMaxGenerationCount(conf.multiplier);
     for (size_t i = 0; i < 8; i++) {
         auto& pass = this->passInfos.at(i);
         pass.renderSemaphores.resize(maxGenCount);

@@ -77,8 +77,9 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         &fds.at(1));
 
     const size_t maxGenCount = Utils::FractionalGenerator::getMaxGenerationCount(conf.multiplier);
-    std::vector<int> outFds(maxGenCount - 1);
-    for (size_t i = 0; i < (maxGenCount - 1); ++i)
+    const size_t maxFramesToGenerate = maxGenCount - 1;
+    std::vector<int> outFds(maxFramesToGenerate);
+    for (size_t i = 0; i < maxFramesToGenerate; ++i)
         this->out_n.emplace_back(info.device, info.physicalDevice,
             extent, format,
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
@@ -119,11 +120,11 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
     this->cmdPool = Mini::CommandPool(info.device, info.queue.first);
     for (size_t i = 0; i < 8; i++) {
         auto& pass = this->passInfos.at(i);
-        pass.renderSemaphores.resize(maxGenCount);
-        pass.acquireSemaphores.resize(maxGenCount);
-        pass.postCopyBufs.resize(maxGenCount);
-        pass.postCopySemaphores.resize(maxGenCount);
-        pass.prevPostCopySemaphores.resize(maxGenCount);
+        pass.renderSemaphores.resize(maxFramesToGenerate);
+        pass.acquireSemaphores.resize(maxFramesToGenerate);
+        pass.postCopyBufs.resize(maxFramesToGenerate);
+        pass.postCopySemaphores.resize(maxFramesToGenerate);
+        pass.prevPostCopySemaphores.resize(maxFramesToGenerate);
     }
 }
 
@@ -131,6 +132,12 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
         const std::vector<VkSemaphore>& gameRenderSemaphores, uint32_t presentIdx) {
     const auto& conf = Config::activeConf;
     auto& pass = this->passInfos.at(this->frameIdx % 8);
+
+    // Validate presentIdx bounds
+    if (presentIdx >= this->swapchainImages.size()) {
+        throw std::out_of_range("presentIdx (" + std::to_string(presentIdx) + 
+                               ") >= swapchainImages.size() (" + std::to_string(this->swapchainImages.size()) + ")");
+    }
 
     // 1. copy swapchain image to frame_0/frame_1
     int preCopySemaphoreFd{};
@@ -180,6 +187,12 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
             pass.acquireSemaphores.at(i).handle(), VK_NULL_HANDLE, &imageIdx);
         if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR)
             throw LSFG::vulkan_error(res, "Failed to acquire next swapchain image");
+
+        // Validate imageIdx bounds
+        if (imageIdx >= this->swapchainImages.size()) {
+            throw std::out_of_range("imageIdx (" + std::to_string(imageIdx) + 
+                                   ") >= swapchainImages.size() (" + std::to_string(this->swapchainImages.size()) + ")");
+        }
 
         // 4. copy output image to swapchain image
         pass.postCopySemaphores.at(i) = Mini::Semaphore(info.device);

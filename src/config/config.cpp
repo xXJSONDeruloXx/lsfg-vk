@@ -90,6 +90,10 @@ void Config::updateConfig(const std::string& file) {
         throw std::runtime_error("Global Multiplier cannot be less than 2");
     if (global.flowScale < 0.25F || global.flowScale > 1.0F)
         throw std::runtime_error("Flow scale must be between 0.25 and 1.0");
+    if (global.gamescope_frame_delay > 0 && global.gamescope_frame_delay < 100)
+        throw std::runtime_error("GameScope frame delay must be 0 (disabled) or >= 100 microseconds (0.1ms)");
+    if (global.gamescope_frame_delay > 50000) // 50ms max (20fps minimum)
+        throw std::runtime_error("GameScope frame delay cannot exceed 50000 microseconds (50ms)");
 
     // parse game-specific configuration
     std::unordered_map<std::string, Configuration> games;
@@ -119,6 +123,10 @@ void Config::updateConfig(const std::string& file) {
             throw std::runtime_error("Multiplier cannot be less than 1");
         if (game.flowScale < 0.25F || game.flowScale > 1.0F)
             throw std::runtime_error("Flow scale must be between 0.25 and 1.0");
+        if (game.gamescope_frame_delay > 0 && game.gamescope_frame_delay < 100)
+            throw std::runtime_error("GameScope frame delay must be 0 (disabled) or >= 100 microseconds (0.1ms)");
+        if (game.gamescope_frame_delay > 50000) // 50ms max (20fps minimum)
+            throw std::runtime_error("GameScope frame delay cannot exceed 50000 microseconds (50ms)");
         games[exe] = std::move(game);
     }
 

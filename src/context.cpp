@@ -172,18 +172,24 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
             preCopySemaphoreFd,
             renderSemaphoreFds);
 
-    // GameScope frame pacing workaround for 2x multiplier
-    // This addresses the GameScope FIFO present mode timing issue where 2x generated frames
-    // are not displayed properly. Adding a small delay helps GameScope's compositor handle
-    // the rapid frame presentations correctly.
-    if (conf.gamescope_frame_delay > 0) {
-        // Check if we're running under GameScope
-        bool isGameScope = std::getenv("GAMESCOPE_WAYLAND_DISPLAY") != nullptr ||
-                          std::getenv("GAMESCOPE_DRM_DEVICE") != nullptr;
-        
-        if (isGameScope && conf.multiplier == 2) {
-            usleep(conf.gamescope_frame_delay);
+    // Frame pacing workaround for 2x multiplier
+    // This addresses timing issues where 2x generated frames are not displayed properly.
+    // Originally designed for GameScope FIFO present mode issues, but can be useful 
+    // for other compositors with similar timing problems.
+    if (conf.gamescope_frame_delay > 0 && conf.multiplier == 2) {
+        static bool logged = false;
+        if (!logged) {
+            // Check if we're running under GameScope for informational logging
+            bool isGameScope = std::getenv("GAMESCOPE_WAYLAND_DISPLAY") != nullptr ||
+                              std::getenv("GAMESCOPE_DRM_DEVICE") != nullptr ||
+                              std::getenv("GAMESCOPE_WIDTH") != nullptr;
+            
+            std::cerr << "lsfg-vk: Applying 2x frame delay workaround (" 
+                      << conf.gamescope_frame_delay << "μs)" 
+                      << (isGameScope ? " [GameScope detected]" : "") << "\n";
+            logged = true;
         }
+        usleep(conf.gamescope_frame_delay);
     }
 
     for (size_t i = 0; i < (conf.multiplier - 1); i++) {

@@ -59,6 +59,9 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         std::cerr << "  Flow Scale: " << conf.flowScale << '\n';
         std::cerr << "  Performance Mode: " << (conf.performance ? "Enabled" : "Disabled") << '\n';
         std::cerr << "  HDR Mode: " << (conf.hdr ? "Enabled" : "Disabled") << '\n';
+        if (conf.gamescope_frame_pacing) {
+            std::cerr << "  Frame Pacing: Enabled (target: " << conf.frame_pacing_target_ms << "ms)\n";
+        }
         if (conf.e_present != 2) std::cerr << "  ! Present Mode: " << conf.e_present << '\n';
         if (conf.gamescope_frame_pacing) {
             std::cerr << "  Frame Pacing: Enabled (target: " << conf.frame_pacing_target_ms << "ms)\n";

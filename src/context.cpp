@@ -22,6 +22,7 @@
 #include <string>
 #include <thread>
 #include <array>
+#include <unistd.h>
 
 LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         VkExtent2D extent, const std::vector<VkImage>& swapchainImages)
@@ -170,6 +171,20 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
         LSFG_3_1::presentContext(*this->lsfgCtxId,
             preCopySemaphoreFd,
             renderSemaphoreFds);
+
+    // GameScope frame pacing workaround for 2x multiplier
+    // This addresses the GameScope FIFO present mode timing issue where 2x generated frames
+    // are not displayed properly. Adding a small delay helps GameScope's compositor handle
+    // the rapid frame presentations correctly.
+    if (conf.gamescope_frame_delay > 0) {
+        // Check if we're running under GameScope
+        bool isGameScope = std::getenv("GAMESCOPE_WAYLAND_DISPLAY") != nullptr ||
+                          std::getenv("GAMESCOPE_DRM_DEVICE") != nullptr;
+        
+        if (isGameScope && conf.multiplier == 2) {
+            usleep(conf.gamescope_frame_delay);
+        }
+    }
 
     for (size_t i = 0; i < (conf.multiplier - 1); i++) {
         // 3. acquire next swapchain image

@@ -73,7 +73,14 @@ void Config::updateConfig(const std::string& file) {
     // parse global configuration
     const toml::value globalTable = toml::find_or_default<toml::table>(toml, "global");
     const Configuration global{
-        .dll =   toml::find_or(globalTable, "dll", std::string()),
+        .enable = true,
+        .dll = toml::find_or(globalTable, "dll", std::string()),
+        .multiplier = toml::find_or(globalTable, "multiplier", 2U),
+        .flowScale = toml::find_or(globalTable, "flow_scale", 1.0F),
+        .performance = toml::find_or(globalTable, "performance_mode", false),
+        .hdr = toml::find_or(globalTable, "hdr_mode", false),
+        .e_present = into_present(toml::find_or(globalTable, "experimental_present_mode", std::string())),
+        .gamescope_frame_delay = toml::find_or(globalTable, "gamescope_frame_delay", 0U),
         .config_file = file,
         .timestamp = std::filesystem::last_write_time(file)
     };
@@ -101,7 +108,8 @@ void Config::updateConfig(const std::string& file) {
             .flowScale = toml::find_or(gameTable, "flow_scale", 1.0F),
             .performance = toml::find_or(gameTable, "performance_mode", false),
             .hdr = toml::find_or(gameTable, "hdr_mode", false),
-            .e_present =   into_present(toml::find_or(gameTable, "experimental_present_mode", "")),
+            .e_present = into_present(toml::find_or(gameTable, "experimental_present_mode", "")),
+            .gamescope_frame_delay = toml::find_or(gameTable, "gamescope_frame_delay", global.gamescope_frame_delay),
             .config_file = file,
             .timestamp = global.timestamp
         };
@@ -141,6 +149,8 @@ Configuration Config::getConfig(const std::pair<std::string, std::string>& name)
         if (hdr) conf.hdr = std::string(hdr) == "1";
         const char* e_present = std::getenv("LSFG_EXPERIMENTAL_PRESENT_MODE");
         if (e_present) conf.e_present = into_present(std::string(e_present));
+        const char* gamescope_frame_delay = std::getenv("LSFG_GAMESCOPE_FRAME_DELAY");
+        if (gamescope_frame_delay) conf.gamescope_frame_delay = std::stoul(gamescope_frame_delay);
 
         return conf;
     }

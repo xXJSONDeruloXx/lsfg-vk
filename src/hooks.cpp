@@ -149,8 +149,13 @@ namespace {
         createInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         createInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
-        // enforce present mode
-        createInfo.presentMode = Config::activeConf.e_present;
+        // enforce present mode (override for frame pacing)
+        VkPresentModeKHR targetPresentMode = Config::activeConf.e_present;
+        if (Config::activeConf.gamescope_frame_pacing) {
+            // Override to immediate mode for perfect frame pacing
+            targetPresentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        }
+        createInfo.presentMode = targetPresentMode;
 
         // retire potential old swapchain
         if (pCreateInfo->oldSwapchain) {

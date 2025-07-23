@@ -7,10 +7,13 @@ const std::string DEFAULT_CONFIG = R"(version = 1
 # override the location of Lossless Scaling
 # dll = "/games/Lossless Scaling/Lossless.dll"
 
-# Frame pacing delay in microseconds for 2x multiplier compatibility
-# Set to 4166 (~240fps pacing) to fix 2x frame generation display issues
-# Valid range: 0 (disabled) or 100-50000 microseconds (0.1ms-50ms)
-# gamescope_frame_delay = 4166
+# Enable perfect frame pacing for GameScope (works for all multipliers but may slow down game)
+# Changes present mode to immediate/mailbox and implements precise timing control
+# gamescope_frame_pacing = false
+
+# Target frame time in milliseconds for frame pacing (default 25ms = 40fps)
+# Higher values = slower pacing, lower values = faster pacing
+# frame_pacing_target_ms = 25
 
 # [[game]] # example entry
 # exe = "Game.exe"
@@ -21,7 +24,8 @@ const std::string DEFAULT_CONFIG = R"(version = 1
 # hdr_mode = false
 #
 # experimental_present_mode = "fifo"
-# gamescope_frame_delay = 4166
+# gamescope_frame_pacing = false
+# frame_pacing_target_ms = 25
 
 [[game]] # default vkcube entry
 exe = "vkcube"

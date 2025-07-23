@@ -80,7 +80,8 @@ void Config::updateConfig(const std::string& file) {
         .performance = toml::find_or(globalTable, "performance_mode", false),
         .hdr = toml::find_or(globalTable, "hdr_mode", false),
         .e_present = into_present(toml::find_or(globalTable, "experimental_present_mode", std::string())),
-        .gamescope_frame_delay = toml::find_or(globalTable, "gamescope_frame_delay", 0U),
+        .gamescope_frame_pacing = toml::find_or(globalTable, "gamescope_frame_pacing", false),
+        .frame_pacing_target_ms = toml::find_or(globalTable, "frame_pacing_target_ms", 25U),
         .config_file = file,
         .timestamp = std::filesystem::last_write_time(file)
     };
@@ -90,10 +91,8 @@ void Config::updateConfig(const std::string& file) {
         throw std::runtime_error("Global Multiplier cannot be less than 2");
     if (global.flowScale < 0.25F || global.flowScale > 1.0F)
         throw std::runtime_error("Flow scale must be between 0.25 and 1.0");
-    if (global.gamescope_frame_delay > 0 && global.gamescope_frame_delay < 100)
-        throw std::runtime_error("GameScope frame delay must be 0 (disabled) or >= 100 microseconds (0.1ms)");
-    if (global.gamescope_frame_delay > 50000) // 50ms max (20fps minimum)
-        throw std::runtime_error("GameScope frame delay cannot exceed 50000 microseconds (50ms)");
+    if (global.frame_pacing_target_ms < 1 || global.frame_pacing_target_ms > 1000)
+        throw std::runtime_error("Frame pacing target must be between 1ms and 1000ms");
 
     // parse game-specific configuration
     std::unordered_map<std::string, Configuration> games;
@@ -113,7 +112,8 @@ void Config::updateConfig(const std::string& file) {
             .performance = toml::find_or(gameTable, "performance_mode", false),
             .hdr = toml::find_or(gameTable, "hdr_mode", false),
             .e_present = into_present(toml::find_or(gameTable, "experimental_present_mode", "")),
-            .gamescope_frame_delay = toml::find_or(gameTable, "gamescope_frame_delay", global.gamescope_frame_delay),
+            .gamescope_frame_pacing = toml::find_or(gameTable, "gamescope_frame_pacing", global.gamescope_frame_pacing),
+            .frame_pacing_target_ms = toml::find_or(gameTable, "frame_pacing_target_ms", global.frame_pacing_target_ms),
             .config_file = file,
             .timestamp = global.timestamp
         };
@@ -123,10 +123,8 @@ void Config::updateConfig(const std::string& file) {
             throw std::runtime_error("Multiplier cannot be less than 1");
         if (game.flowScale < 0.25F || game.flowScale > 1.0F)
             throw std::runtime_error("Flow scale must be between 0.25 and 1.0");
-        if (game.gamescope_frame_delay > 0 && game.gamescope_frame_delay < 100)
-            throw std::runtime_error("GameScope frame delay must be 0 (disabled) or >= 100 microseconds (0.1ms)");
-        if (game.gamescope_frame_delay > 50000) // 50ms max (20fps minimum)
-            throw std::runtime_error("GameScope frame delay cannot exceed 50000 microseconds (50ms)");
+        if (game.frame_pacing_target_ms < 1 || game.frame_pacing_target_ms > 1000)
+            throw std::runtime_error("Frame pacing target must be between 1ms and 1000ms");
         games[exe] = std::move(game);
     }
 
@@ -157,8 +155,10 @@ Configuration Config::getConfig(const std::pair<std::string, std::string>& name)
         if (hdr) conf.hdr = std::string(hdr) == "1";
         const char* e_present = std::getenv("LSFG_EXPERIMENTAL_PRESENT_MODE");
         if (e_present) conf.e_present = into_present(std::string(e_present));
-        const char* gamescope_frame_delay = std::getenv("LSFG_GAMESCOPE_FRAME_DELAY");
-        if (gamescope_frame_delay) conf.gamescope_frame_delay = std::stoul(gamescope_frame_delay);
+        const char* gamescope_frame_pacing = std::getenv("LSFG_GAMESCOPE_FRAME_PACING");
+        if (gamescope_frame_pacing) conf.gamescope_frame_pacing = std::string(gamescope_frame_pacing) == "1";
+        const char* frame_pacing_target_ms = std::getenv("LSFG_FRAME_PACING_TARGET_MS");
+        if (frame_pacing_target_ms) conf.frame_pacing_target_ms = std::stoul(frame_pacing_target_ms);
 
         return conf;
     }

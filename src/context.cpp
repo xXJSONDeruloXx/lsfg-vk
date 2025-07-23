@@ -60,6 +60,9 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         std::cerr << "  Performance Mode: " << (conf.performance ? "Enabled" : "Disabled") << '\n';
         std::cerr << "  HDR Mode: " << (conf.hdr ? "Enabled" : "Disabled") << '\n';
         if (conf.e_present != 2) std::cerr << "  ! Present Mode: " << conf.e_present << '\n';
+        if (conf.gamescope_frame_pacing) {
+            std::cerr << "  Frame Pacing: Enabled (target: " << conf.frame_pacing_target_ms << "ms)\n";
+        }
 
         if (conf.multiplier <= 1) return;
     }
@@ -175,44 +178,53 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
         { pass.preCopySemaphores.at(0).handle(),
           pass.preCopySemaphores.at(1).handle() });
 
-    // 2. render intermediary frames
+    // 2. render intermediary frames with timing measurement for frame pacing
     std::vector<int> renderSemaphoreFds(conf.multiplier - 1);
     for (size_t i = 0; i < (conf.multiplier - 1); ++i)
         pass.renderSemaphores.at(i) = Mini::Semaphore(info.device, &renderSemaphoreFds.at(i));
 
-    if (conf.performance)
-        LSFG_3_1P::presentContext(*this->lsfgCtxId,
-            preCopySemaphoreFd,
-            renderSemaphoreFds);
-    else
-        LSFG_3_1::presentContext(*this->lsfgCtxId,
-            preCopySemaphoreFd,
-            renderSemaphoreFds);
-
-    // Frame pacing workaround for 2x multiplier
-    // This addresses timing issues where 2x generated frames are not displayed properly.
-    if (conf.gamescope_frame_delay > 0 && conf.multiplier == 2) {
+    std::chrono::duration<double, std::milli> generationTime{0};
+    if (conf.gamescope_frame_pacing) {
+        // Measure generation time for precise frame pacing
+        auto startTime = std::chrono::high_resolution_clock::now();
+        
+        if (conf.performance)
+            LSFG_3_1P::presentContext(*this->lsfgCtxId,
+                preCopySemaphoreFd,
+                renderSemaphoreFds);
+        else
+            LSFG_3_1::presentContext(*this->lsfgCtxId,
+                preCopySemaphoreFd,
+                renderSemaphoreFds);
+        
+        auto endTime = std::chrono::high_resolution_clock::now();
+        generationTime = endTime - startTime;
+        
         static bool logged = false;
-        static uint32_t lastDelay = 0;
-        
-        // Reset logging if delay value changed (for real-time config updates)
-        if (lastDelay != conf.gamescope_frame_delay) {
-            logged = false;
-            lastDelay = conf.gamescope_frame_delay;
-        }
-        
         if (!logged) {
-            // Check if we're running under GameScope for informational logging
-            bool isGameScope = std::getenv("GAMESCOPE_WAYLAND_DISPLAY") != nullptr ||
-                              std::getenv("GAMESCOPE_DRM_DEVICE") != nullptr ||
-                              std::getenv("GAMESCOPE_WIDTH") != nullptr;
-            
-            std::cerr << "lsfg-vk: Applying 2x frame delay workaround (" 
-                      << conf.gamescope_frame_delay << "μs)" 
-                      << (isGameScope ? " [GameScope detected]" : "") << "\n";
+            std::cerr << "lsfg-vk: Perfect frame pacing enabled (target: " 
+                      << conf.frame_pacing_target_ms << "ms)\n";
             logged = true;
         }
-        usleep(conf.gamescope_frame_delay);
+    } else {
+        // Normal generation without timing measurement
+        if (conf.performance)
+            LSFG_3_1P::presentContext(*this->lsfgCtxId,
+                preCopySemaphoreFd,
+                renderSemaphoreFds);
+        else
+            LSFG_3_1::presentContext(*this->lsfgCtxId,
+                preCopySemaphoreFd,
+                renderSemaphoreFds);
+    }
+
+    // Calculate remaining sleep time for perfect frame pacing
+    uint32_t remainingSleepMs = 0;
+    if (conf.gamescope_frame_pacing) {
+        double remainingMs = conf.frame_pacing_target_ms - generationTime.count();
+        if (remainingMs > 0) {
+            remainingSleepMs = static_cast<uint32_t>(remainingMs);
+        }
     }
 
     for (size_t i = 0; i < (conf.multiplier - 1); i++) {
@@ -244,9 +256,22 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
             { pass.postCopySemaphores.at(i).handle(),
               pass.prevPostCopySemaphores.at(i).handle() });
 
-        // 5. present swapchain image
+        // 5. present swapchain image with frame pacing
         std::vector<VkSemaphore> waitSemaphores{ pass.postCopySemaphores.at(i).handle() };
         if (i != 0) waitSemaphores.emplace_back(pass.prevPostCopySemaphores.at(i - 1).handle());
+
+        // Apply frame pacing sleep
+        if (conf.gamescope_frame_pacing) {
+            if (i == 0) {
+                // First iteration: sleep for remaining time after generation
+                if (remainingSleepMs > 0) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(remainingSleepMs));
+                }
+            } else {
+                // Subsequent iterations: sleep for full target time
+                std::this_thread::sleep_for(std::chrono::milliseconds(conf.frame_pacing_target_ms));
+            }
+        }
 
         const VkPresentInfoKHR presentInfo{
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -260,6 +285,11 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
         res = Layer::ovkQueuePresentKHR(queue, &presentInfo);
         if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR)
             throw LSFG::vulkan_error(res, "Failed to present swapchain image");
+    }
+
+    // Apply final frame pacing sleep before presenting the real frame
+    if (conf.gamescope_frame_pacing) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(conf.frame_pacing_target_ms));
     }
 
     // 6. present actual next frame

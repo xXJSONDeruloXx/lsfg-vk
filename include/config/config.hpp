@@ -28,8 +28,10 @@ namespace Config {
         /// Experimental flag for overriding the synchronization method.
         VkPresentModeKHR e_present;
 
-        /// GameScope frame pacing delay in microseconds (0 = disabled, 4166 = ~240fps pacing)
-        uint32_t gamescope_frame_delay{0};
+        /// Enable perfect frame pacing for GameScope (works for all multipliers but may slow down game)
+        bool gamescope_frame_pacing{false};
+        /// Target frame time in milliseconds for frame pacing (default 25ms for 40fps)
+        uint32_t frame_pacing_target_ms{25};
 
         /// Path to the configuration file.
         std::filesystem::path config_file;

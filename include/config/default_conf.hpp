@@ -9,8 +9,6 @@ const std::string DEFAULT_CONFIG = R"(version = 1
 
 # Frame pacing delay in microseconds for 2x multiplier compatibility
 # Set to 4166 (~240fps pacing) to fix 2x frame generation display issues
-# Originally designed for GameScope/Steam Deck, but works with any compositor
-# Only affects 2x multiplier. Set to 0 to disable.
 # Valid range: 0 (disabled) or 100-50000 microseconds (0.1ms-50ms)
 # gamescope_frame_delay = 4166
 

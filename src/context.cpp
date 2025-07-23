@@ -130,7 +130,24 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
 
 VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, VkQueue queue,
         const std::vector<VkSemaphore>& gameRenderSemaphores, uint32_t presentIdx) {
-    const auto& conf = Config::activeConf;
+    // get updated configuration (check for config file changes)
+    auto& conf = Config::activeConf;
+    if (!conf.config_file.empty()
+            && (
+                    !std::filesystem::exists(conf.config_file)
+                  || conf.timestamp != std::filesystem::last_write_time(conf.config_file)
+            )) {
+        // reread configuration for real-time updates
+        const std::string file = Utils::getConfigFile();
+        const auto name = Utils::getProcessName();
+        try {
+            Config::updateConfig(file);
+            conf = Config::getConfig(name);
+        } catch (const std::exception& e) {
+            // Continue with old config if reload fails
+        }
+    }
+    
     auto& pass = this->passInfos.at(this->frameIdx % 8);
 
     // 1. copy swapchain image to frame_0/frame_1
@@ -174,10 +191,16 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
 
     // Frame pacing workaround for 2x multiplier
     // This addresses timing issues where 2x generated frames are not displayed properly.
-    // Originally designed for GameScope FIFO present mode issues, but can be useful 
-    // for other compositors with similar timing problems.
     if (conf.gamescope_frame_delay > 0 && conf.multiplier == 2) {
         static bool logged = false;
+        static uint32_t lastDelay = 0;
+        
+        // Reset logging if delay value changed (for real-time config updates)
+        if (lastDelay != conf.gamescope_frame_delay) {
+            logged = false;
+            lastDelay = conf.gamescope_frame_delay;
+        }
+        
         if (!logged) {
             // Check if we're running under GameScope for informational logging
             bool isGameScope = std::getenv("GAMESCOPE_WAYLAND_DISPLAY") != nullptr ||

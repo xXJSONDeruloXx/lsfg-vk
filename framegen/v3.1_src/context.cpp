@@ -63,13 +63,6 @@ void Context::present(Vulkan& vk,
         int inSem, const std::vector<int>& outSem) {
     auto& data = this->data.at(this->frameIdx % 8);
 
-    // 3. wait for completion of previous frame in this slot
-    if (data.shouldWait)
-        for (auto& fence : data.completionFences)
-            if (!fence.wait(vk.device, UINT64_MAX))
-                throw LSFG::vulkan_error(VK_TIMEOUT, "Fence wait timed out");
-    data.shouldWait = true;
-
     // 1. create mipmaps and process input image
     if (inSem >= 0) data.inSemaphore = Core::Semaphore(vk.device, inSem);
     for (size_t i = 0; i < vk.generationCount; i++)
@@ -116,6 +109,13 @@ void Context::present(Vulkan& vk,
             { internalSemaphore }, std::nullopt,
             signals, std::nullopt);
     }
+
+    // 3. wait for completion of previous frame in this slot (moved to end for precise timing)
+    if (data.shouldWait)
+        for (auto& fence : data.completionFences)
+            if (!fence.wait(vk.device, UINT64_MAX))
+                throw LSFG::vulkan_error(VK_TIMEOUT, "Fence wait timed out");
+    data.shouldWait = true;
 
     this->frameIdx++;
 }

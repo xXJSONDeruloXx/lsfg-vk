@@ -7,6 +7,8 @@ const std::string DEFAULT_CONFIG = R"(version = 1
 # override the location of Lossless Scaling
 # dll = "/games/Lossless Scaling/Lossless.dll"
 
+# target_total_fps = 120.0  # Target total FPS for frame pacing (0 = no pacing)
+
 # [[game]] # example entry
 # exe = "Game.exe"
 #
@@ -14,6 +16,7 @@ const std::string DEFAULT_CONFIG = R"(version = 1
 # flow_scale = 0.7
 # performance_mode = true
 # hdr_mode = false
+# target_total_fps = 144.0
 #
 # experimental_present_mode = "fifo"
 

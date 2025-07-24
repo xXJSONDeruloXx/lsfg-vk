@@ -58,6 +58,10 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         std::cerr << "  Flow Scale: " << conf.flowScale << '\n';
         std::cerr << "  Performance Mode: " << (conf.performance ? "Enabled" : "Disabled") << '\n';
         std::cerr << "  HDR Mode: " << (conf.hdr ? "Enabled" : "Disabled") << '\n';
+        if (conf.target_total_fps > 0.0f) {
+            std::cerr << "  Target Total FPS: " << conf.target_total_fps 
+                      << " (" << (1000.0f / conf.target_total_fps) << "ms per frame)\n";
+        }
         if (conf.e_present != 2) std::cerr << "  ! Present Mode: " << conf.e_present << '\n';
 
         if (conf.multiplier <= 1) return;
@@ -162,6 +166,9 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
     for (size_t i = 0; i < (conf.multiplier - 1); ++i)
         pass.renderSemaphores.at(i) = Mini::Semaphore(info.device, &renderSemaphoreFds.at(i));
 
+    // measure frame generation time for precise timing
+    const auto frameGenStart = std::chrono::high_resolution_clock::now();
+    
     if (conf.performance)
         LSFG_3_1P::presentContext(*this->lsfgCtxId,
             preCopySemaphoreFd,
@@ -171,7 +178,27 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
             preCopySemaphoreFd,
             renderSemaphoreFds);
 
+    const auto frameGenEnd = std::chrono::high_resolution_clock::now();
+    const auto frameGenDuration = std::chrono::duration_cast<std::chrono::microseconds>(frameGenEnd - frameGenStart);
+    
+    const auto targetFrameTime = (conf.target_total_fps > 0.0f) 
+        ? std::chrono::microseconds(static_cast<int>(1000000.0f / conf.target_total_fps))
+        : std::chrono::microseconds(0);
+    
+    const bool shouldPace = targetFrameTime.count() > 0;
+    const bool canPaceThisFrame = shouldPace && (frameGenDuration < targetFrameTime);
+    const auto remainingTime = canPaceThisFrame ? targetFrameTime - frameGenDuration : std::chrono::microseconds(0);
+
     for (size_t i = 0; i < (conf.multiplier - 1); i++) {
+        if (canPaceThisFrame) {
+            if (i == 0) {
+                if (remainingTime.count() > 0)
+                    std::this_thread::sleep_for(remainingTime);
+            } else {
+                std::this_thread::sleep_for(targetFrameTime);
+            }
+        }
+
         // 3. acquire next swapchain image
         pass.acquireSemaphores.at(i) = Mini::Semaphore(info.device);
         uint32_t imageIdx{};
@@ -216,6 +243,10 @@ VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, Vk
         res = Layer::ovkQueuePresentKHR(queue, &presentInfo);
         if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR)
             throw LSFG::vulkan_error(res, "Failed to present swapchain image");
+    }
+
+    if (canPaceThisFrame) {
+        std::this_thread::sleep_for(targetFrameTime);
     }
 
     // 6. present actual next frame

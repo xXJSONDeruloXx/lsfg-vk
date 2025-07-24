@@ -48,11 +48,13 @@ namespace {
         if (!conf.dll.empty()) std::cerr << "  Using DLL from: " << conf.dll << '\n';
         std::cerr << "  Multiplier: " << conf.multiplier << '\n';
         std::cerr << "  Flow Scale: " << conf.flowScale << '\n';
-        std::cerr << "  Performance Mode: " << (conf.performance ? "Enabled" : "Disabled") << '\n';
-        std::cerr << "  HDR Mode: " << (conf.hdr ? "Enabled" : "Disabled") << '\n';
-        if (conf.e_present != 2) std::cerr << "  ! Present Mode: " << conf.e_present << '\n';
-
-        // remove mesa var in favor of config
+    std::cerr << "  Performance Mode: " << (conf.performance ? "Enabled" : "Disabled") << '\n';
+    std::cerr << "  HDR Mode: " << (conf.hdr ? "Enabled" : "Disabled") << '\n';
+    if (conf.target_total_fps > 0.0f) {
+        std::cerr << "  Target Total FPS: " << conf.target_total_fps 
+                  << " (" << (1000.0f / conf.target_total_fps) << "ms per frame)\n";
+    }
+    if (conf.e_present != 2) std::cerr << "  ! Present Mode: " << conf.e_present << '\n';        // remove mesa var in favor of config
         unsetenv("MESA_VK_WSI_PRESENT_MODE"); // NOLINT
 
         // write latest file

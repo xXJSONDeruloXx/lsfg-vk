@@ -24,6 +24,8 @@ namespace Config {
         bool performance{false};
         /// Whether HDR is enabled
         bool hdr{false};
+        /// Target total FPS for frame pacing (0 = no pacing)
+        float target_total_fps{0.0f};
 
         /// Experimental flag for overriding the synchronization method.
         VkPresentModeKHR e_present;

@@ -2,7 +2,7 @@ name: Build lsfg-vk Flatpak extensions
 
 on:
   push:
-    branches: ["release"]
+    branches: ["develop"]
 
 jobs:
   flatpak:

@@ -97,3 +97,48 @@ sudo cmake --install build
 ```
 
 Keep track of the installed files, in order to uninstall them later if needed.
+
+## Building Portable Layer Bundles (.so + manifest)
+
+If you only need the Vulkan layer shared library and its manifest, use the helper script:
+```bash
+./scripts/build-layer-bundles.sh
+```
+
+By default, it builds these targets:
+- `glibc-x86_64`
+- `android-arm64-v8a`
+- `android-x86_64`
+
+The script:
+- builds `lsfg-vk-layer` only
+- disables the CLI and UI
+- produces a portable bundle containing:
+  - `liblsfg-vk-layer.so`
+  - `VkLayer_LSFGVK_frame_generation.json`
+- downloads `Vulkan-Headers` automatically if needed
+
+Example invocations:
+```bash
+# Build only the desktop glibc layer bundle
+./scripts/build-layer-bundles.sh --glibc
+
+# Build only the Android arm64-v8a bundle
+ANDROID_NDK_HOME=/path/to/android-ndk \
+./scripts/build-layer-bundles.sh --android-arm64
+
+# Build both Android bundles with a specific API level
+ANDROID_NDK_HOME=/path/to/android-ndk \
+./scripts/build-layer-bundles.sh --android-arm64 --android-x86_64 --android-api 26
+```
+
+Output directories are written to:
+- `out/layer-bundles/glibc-x86_64`
+- `out/layer-bundles/android-arm64-v8a`
+- `out/layer-bundles/android-x86_64`
+
+>[!IMPORTANT]
+> The Android targets here solve build and packaging only. Runtime compatibility still depends on the target Vulkan loader and the extensions supported by the device/driver stack.
+
+>[!NOTE]
+> Android uses the `arm64-v8a` and `x86_64` ABIs. `arm64ec` is a Windows ABI and is not supported by the Android NDK.

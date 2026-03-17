@@ -17,6 +17,13 @@ set(COMMON_SOURCES
 
 add_library(lsfg-vk-common STATIC ${COMMON_SOURCES})
 
+target_link_libraries(lsfg-vk-common
+    PUBLIC lsfg-vk-build-config)
+if(CMAKE_DL_LIBS)
+    target_link_libraries(lsfg-vk-common
+        PUBLIC ${CMAKE_DL_LIBS})
+endif()
+
 target_include_directories(lsfg-vk-common
     PUBLIC include)
 

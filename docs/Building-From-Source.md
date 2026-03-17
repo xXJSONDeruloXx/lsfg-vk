@@ -107,6 +107,7 @@ If you only need the Vulkan layer shared library and its manifest, use the helpe
 
 By default, it builds these targets:
 - `glibc-x86_64`
+- `glibc-aarch64`
 - `android-arm64-v8a`
 - `android-x86_64`
 
@@ -120,8 +121,12 @@ The script:
 
 Example invocations:
 ```bash
-# Build only the desktop glibc layer bundle
+# Build only the desktop glibc x86_64 layer bundle
 ./scripts/build-layer-bundles.sh --glibc
+
+# Build a glibc aarch64 layer bundle for ARM64 glibc environments
+GLIBC_AARCH64_CXX=aarch64-linux-gnu-g++ \
+./scripts/build-layer-bundles.sh --glibc-aarch64
 
 # Build only the Android arm64-v8a bundle
 ANDROID_NDK_HOME=/path/to/android-ndk \
@@ -134,11 +139,15 @@ ANDROID_NDK_HOME=/path/to/android-ndk \
 
 Output directories are written to:
 - `out/layer-bundles/glibc-x86_64`
+- `out/layer-bundles/glibc-aarch64`
 - `out/layer-bundles/android-arm64-v8a`
 - `out/layer-bundles/android-x86_64`
 
 >[!IMPORTANT]
 > The Android targets here solve build and packaging only. Runtime compatibility still depends on the target Vulkan loader and the extensions supported by the device/driver stack.
+
+>[!NOTE]
+> The `glibc-aarch64` target is intended for ARM64 Linux/glibc environments, such as ARM64 glibc container runtimes. It is separate from the Android/bionic targets.
 
 >[!NOTE]
 > Android uses the `arm64-v8a` and `x86_64` ABIs. `arm64ec` is a Windows ABI and is not supported by the Android NDK.

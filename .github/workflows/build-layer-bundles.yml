@@ -21,10 +21,16 @@ jobs:
         include:
           - target: glibc-x86_64
             android: false
+            glibc_aarch64_cxx: ""
+          - target: glibc-aarch64
+            android: false
+            glibc_aarch64_cxx: aarch64-linux-gnu-g++
           - target: android-arm64-v8a
             android: true
+            glibc_aarch64_cxx: ""
           - target: android-x86_64
             android: true
+            glibc_aarch64_cxx: ""
 
     steps:
       - name: Checkout repository
@@ -37,7 +43,8 @@ jobs:
             git \
             clang \
             cmake \
-            ninja-build
+            ninja-build \
+            g++-aarch64-linux-gnu
 
       - name: Setup Android NDK
         if: matrix.android
@@ -50,6 +57,7 @@ jobs:
         env:
           ANDROID_API: ${{ inputs.android_api }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          GLIBC_AARCH64_CXX: ${{ matrix.glibc_aarch64_cxx }}
           VULKAN_HEADERS_REF: ${{ inputs.vulkan_headers_ref }}
         run: |
           chmod +x scripts/build-layer-bundles.sh

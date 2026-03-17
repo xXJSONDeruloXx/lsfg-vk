@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_ROOT="${BUILD_ROOT:-$ROOT_DIR/out/build}"
 OUT_ROOT="${OUT_ROOT:-$ROOT_DIR/out/layer-bundles}"
 HOST_CXX="${HOST_CXX:-}"
+GLIBC_AARCH64_CXX="${GLIBC_AARCH64_CXX:-}"
 ANDROID_API="${ANDROID_API:-26}"
 ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-${ANDROID_NDK:-}}}"
 VULKAN_HEADERS_DIR="${VULKAN_HEADERS_DIR:-}"
@@ -18,6 +19,7 @@ usage() {
     echo
     echo "Targets:"
     echo "  glibc-x86_64"
+    echo "  glibc-aarch64"
     echo "  android-arm64-v8a"
     echo "  android-x86_64"
     echo
@@ -25,12 +27,14 @@ usage() {
     echo "  --all                     Build all targets (default)"
     echo "  --target <name>           Build a specific target; may be passed multiple times"
     echo "  --glibc                   Shortcut for --target glibc-x86_64"
+    echo "  --glibc-aarch64           Shortcut for --target glibc-aarch64"
     echo "  --android-arm64           Shortcut for --target android-arm64-v8a"
     echo "  --android-x86_64          Shortcut for --target android-x86_64"
     echo "  --android-ndk <path>      Path to the Android NDK"
     echo "  --android-api <level>     Android API level to target (default: ${ANDROID_API})"
     echo "  --vulkan-headers-dir <p>  Path to a Vulkan-Headers include dir or repo checkout"
-    echo "  --host-cxx <compiler>     Host C++ compiler for glibc builds"
+    echo "  --host-cxx <compiler>     Host C++ compiler for glibc x86_64 builds"
+    echo "  --glibc-aarch64-cxx <c>   Cross C++ compiler for glibc-aarch64 builds"
     echo "  --build-root <path>       Build directory root (default: ${BUILD_ROOT})"
     echo "  --out-dir <path>          Output bundle root (default: ${OUT_ROOT})"
     echo "  --clean                   Remove each target's existing build/output directories first"
@@ -38,6 +42,7 @@ usage() {
     echo
     echo "Notes:"
     echo "  - Android ABIs are arm64-v8a and x86_64. arm64ec is a Windows ABI and is not supported here."
+    echo "  - glibc-aarch64 expects a Linux glibc cross compiler such as aarch64-linux-gnu-g++."
     echo "  - The script builds the Vulkan layer bundle only (.so + manifest), not the CLI/UI."
 }
 
@@ -56,6 +61,20 @@ ensure_host_cxx() {
     fi
 
     echo "error: no host C++ compiler found; set --host-cxx or HOST_CXX" >&2
+    exit 1
+}
+
+ensure_glibc_aarch64_cxx() {
+    if [[ -n "$GLIBC_AARCH64_CXX" ]]; then
+        return
+    fi
+
+    if command -v aarch64-linux-gnu-g++ >/dev/null 2>&1; then
+        GLIBC_AARCH64_CXX="aarch64-linux-gnu-g++"
+        return
+    fi
+
+    echo "error: no glibc aarch64 cross compiler found; set --glibc-aarch64-cxx or GLIBC_AARCH64_CXX" >&2
     exit 1
 }
 
@@ -147,6 +166,14 @@ build_target() {
                 -DCMAKE_CXX_COMPILER="$HOST_CXX"
             )
             ;;
+        glibc-aarch64)
+            ensure_glibc_aarch64_cxx
+            cmake_args+=(
+                -DCMAKE_SYSTEM_NAME=Linux
+                -DCMAKE_SYSTEM_PROCESSOR=aarch64
+                -DCMAKE_CXX_COMPILER="$GLIBC_AARCH64_CXX"
+            )
+            ;;
         android-arm64-v8a)
             ensure_android_ndk
             cmake_args+=(
@@ -188,7 +215,7 @@ declare -a targets=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --all)
-            targets=(glibc-x86_64 android-arm64-v8a android-x86_64)
+            targets=(glibc-x86_64 glibc-aarch64 android-arm64-v8a android-x86_64)
             shift
             ;;
         --target)
@@ -197,6 +224,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --glibc)
             targets+=("glibc-x86_64")
+            shift
+            ;;
+        --glibc-aarch64)
+            targets+=("glibc-aarch64")
             shift
             ;;
         --android-arm64)
@@ -221,6 +252,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --host-cxx)
             HOST_CXX="$2"
+            shift 2
+            ;;
+        --glibc-aarch64-cxx)
+            GLIBC_AARCH64_CXX="$2"
             shift 2
             ;;
         --build-root)
@@ -248,7 +283,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ${#targets[@]} -eq 0 ]]; then
-    targets=(glibc-x86_64 android-arm64-v8a android-x86_64)
+    targets=(glibc-x86_64 glibc-aarch64 android-arm64-v8a android-x86_64)
 fi
 
 ensure_vulkan_headers

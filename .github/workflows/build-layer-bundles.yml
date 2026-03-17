@@ -1,0 +1,69 @@
+name: (Manual) Layer bundles
+
+on:
+  workflow_dispatch:
+    inputs:
+      android_api:
+        description: Android API level for bionic builds
+        required: false
+        default: "26"
+      vulkan_headers_ref:
+        description: Vulkan-Headers git ref used by the build script
+        required: false
+        default: vulkan-sdk-1.4.328
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: glibc-x86_64
+            android: false
+          - target: android-arm64-v8a
+            android: true
+          - target: android-x86_64
+            android: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            clang \
+            cmake \
+            ninja-build
+
+      - name: Setup Android NDK
+        if: matrix.android
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+
+      - name: Build layer bundle
+        env:
+          ANDROID_API: ${{ inputs.android_api }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          VULKAN_HEADERS_REF: ${{ inputs.vulkan_headers_ref }}
+        run: |
+          chmod +x scripts/build-layer-bundles.sh
+          scripts/build-layer-bundles.sh --clean --target "${{ matrix.target }}"
+
+      - name: Archive bundle
+        run: |
+          tar -C "out/layer-bundles/${{ matrix.target }}" \
+            -caf "lsfg-vk-layer-${{ matrix.target }}.tar.xz" .
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lsfg-vk-layer-${{ matrix.target }}
+          path: |
+            out/layer-bundles/${{ matrix.target }}/*
+            lsfg-vk-layer-${{ matrix.target }}.tar.xz

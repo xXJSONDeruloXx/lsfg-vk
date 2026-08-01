@@ -80,11 +80,26 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          name: glibc-x86_64
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: glibc-aarch64
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: flatpak-23.08
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: flatpak-24.08
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: flatpak-25.08
           path: release-assets
       - name: Assemble checksums
         run: |
-          find release-assets -name '*.tar.xz' -type f -exec cp {} release-assets/ \;
-          find release-assets -name '*.flatpak' -type f -exec cp {} release-assets/ \;
           cd release-assets
           sha256sum lsfg-vk-layer-*.tar.xz org.freedesktop.Platform.VulkanLayer.lsfg_vk_*.flatpak > SHA256SUMS
       - name: Publish immutable release

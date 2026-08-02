@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -16,6 +17,8 @@
 #include <vulkan/vk_layer.h>
 
 namespace vk {
+
+    class Image;
 
     /// vulkan instance function pointers
     struct VulkanInstanceFuncs {
@@ -214,6 +217,15 @@ namespace vk {
         /// @return true if fp16 is supported
         [[nodiscard]] bool supportsFP16() const { return this->fp16; }
 
+        /// check if null image descriptors are supported
+        /// @return true if VK_EXT_robustness2 nullDescriptor is enabled
+        [[nodiscard]] bool supportsNullDescriptor() const {
+            return this->nullDescriptorSupported;
+        }
+        /// get the fallback image used for optional image descriptors
+        /// @return a valid sampled/storage image
+        [[nodiscard]] const Image& fallbackDescriptorImage() const;
+
         /// get instance-level function pointers
         /// @return the instance function pointers
         [[nodiscard]] const auto& fi() const { return this->instance_funcs; }
@@ -230,6 +242,7 @@ namespace vk {
         VkPhysicalDevice phys_dev;
         uint32_t queueFamilyIdx;
         bool fp16;
+        bool nullDescriptorSupported;
 
         ls::owned_ptr<VkDevice> device;
         std::optional<PFN_vkSetDeviceLoaderData> setLoaderData;
@@ -240,5 +253,6 @@ namespace vk {
         ls::owned_ptr<VkCommandPool> cmdPool;
         ls::owned_ptr<VkPipelineCache> pipelineCache;
         std::optional<std::filesystem::path> cachefile;
+        std::shared_ptr<Image> fallbackDescriptorImage_;
     };
 }

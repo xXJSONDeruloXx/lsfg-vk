@@ -3,6 +3,7 @@
 #include "lsfg-vk-common/vulkan/vulkan.hpp"
 #include "lsfg-vk-common/helpers/errors.hpp"
 #include "lsfg-vk-common/helpers/pointers.hpp"
+#include "lsfg-vk-common/vulkan/image.hpp"
 
 #include <array>
 #include <bitset>
@@ -149,6 +150,44 @@ namespace {
         return supportedFeaturesVulkan12.shaderFloat16 == VK_TRUE;
     }
 
+    /// check if a physical device exposes a device extension
+    bool hasDeviceExtension(const VulkanInstanceFuncs& fi, VkPhysicalDevice physdev,
+            const char* extensionName) {
+        uint32_t extensionCount{};
+        auto res = fi.EnumerateDeviceExtensionProperties(
+            physdev, nullptr, &extensionCount, nullptr);
+        if (res != VK_SUCCESS)
+            throw ls::vulkan_error(res, "vkEnumerateDeviceExtensionProperties() failed");
+
+        std::vector<VkExtensionProperties> extensions(extensionCount);
+        res = fi.EnumerateDeviceExtensionProperties(
+            physdev, nullptr, &extensionCount, extensions.data());
+        if (res != VK_SUCCESS)
+            throw ls::vulkan_error(res, "vkEnumerateDeviceExtensionProperties() failed");
+
+        for (const auto& extension : extensions)
+            if (std::string(extension.extensionName) == extensionName)
+                return true;
+
+        return false;
+    }
+
+    /// check if null image descriptors are both exposed and supported
+    bool checkNullDescriptor(const VulkanInstanceFuncs& fi, VkPhysicalDevice physdev) {
+        if (!hasDeviceExtension(fi, physdev, VK_EXT_ROBUSTNESS_2_EXTENSION_NAME))
+            return false;
+
+        VkPhysicalDeviceRobustness2FeaturesEXT supportedRobustness2{
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT
+        };
+        VkPhysicalDeviceFeatures2 supportedFeatures{
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+            .pNext = &supportedRobustness2
+        };
+        fi.GetPhysicalDeviceFeatures2(physdev, &supportedFeatures);
+        return supportedRobustness2.nullDescriptor == VK_TRUE;
+    }
+
     template<typename T>
     T dpa(const VulkanInstanceFuncs& funcs, VkDevice device, const char* name) {
         T func = reinterpret_cast<T>(
@@ -160,12 +199,20 @@ namespace {
 
     /// create a logical device
     ls::owned_ptr<VkDevice> createLogicalDevice(const VulkanInstanceFuncs& fi,
-            VkPhysicalDevice physdev, uint32_t cfi, bool fp16) {
+            VkPhysicalDevice physdev, uint32_t cfi, bool fp16,
+            bool& nullDescriptorSupported) {
         VkDevice handle{};
 
+        nullDescriptorSupported = checkNullDescriptor(fi, physdev);
+
         const float queuePriority{1.0F}; // highest priority
+        VkPhysicalDeviceRobustness2FeaturesEXT requestedRobustness2{
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT,
+            .nullDescriptor = VK_TRUE
+        };
         const VkPhysicalDeviceVulkan12Features requestedFeaturesVulkan12{
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+            .pNext = nullDescriptorSupported ? &requestedRobustness2 : nullptr,
             .shaderFloat16 = fp16,
             .timelineSemaphore = VK_TRUE
         };
@@ -175,11 +222,13 @@ namespace {
             .queueCount = 1,
             .pQueuePriorities = &queuePriority
         };
-        const std::vector<const char*> requestedExtensions{
+        std::vector<const char*> requestedExtensions{
             VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
             VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
             VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME
         };
+        if (nullDescriptorSupported)
+            requestedExtensions.push_back(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);
         const VkDeviceCreateInfo deviceInfo{
             .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
             .pNext = &requestedFeaturesVulkan12,
@@ -413,10 +462,12 @@ Vulkan::Vulkan(const std::string& appName, version appVersion,
     queueFamilyIdx(findQFI(this->instance_funcs, this->phys_dev,
         isGraphical ? VK_QUEUE_GRAPHICS_BIT : VK_QUEUE_COMPUTE_BIT)),
     fp16(checkFP16(this->instance_funcs, this->phys_dev)),
+    nullDescriptorSupported(false),
     device(createLogicalDevice(this->instance_funcs,
         this->phys_dev,
         this->queueFamilyIdx,
-        this->fp16
+        this->fp16,
+        this->nullDescriptorSupported
     )),
     setLoaderData(setLoaderData),
     device_funcs(initVulkanDeviceFuncs(
@@ -434,6 +485,12 @@ Vulkan::Vulkan(const std::string& appName, version appVersion,
         *this->device, cachefile
     )),
     cachefile(cachefile) {
+    if (!this->nullDescriptorSupported) {
+        this->fallbackDescriptorImage_ = std::make_shared<Image>(*this,
+            VkExtent2D{1, 1}, VK_FORMAT_R8G8B8A8_UNORM,
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT
+        );
+    }
 }
 
 Vulkan::Vulkan(VkInstance instance, VkDevice device,
@@ -449,6 +506,7 @@ Vulkan::Vulkan(VkInstance instance, VkDevice device,
     queueFamilyIdx(findQFI(this->instance_funcs, this->phys_dev,
         isGraphical ? VK_QUEUE_GRAPHICS_BIT : VK_QUEUE_COMPUTE_BIT)),
     fp16(false),
+    nullDescriptorSupported(false),
     device(new VkDevice(device)),
     setLoaderData(setLoaderData),
     device_funcs(deviceFuncs),
@@ -463,6 +521,10 @@ Vulkan::Vulkan(VkInstance instance, VkDevice device,
         *this->device, cachefile
     )),
     cachefile(cachefile) {
+}
+
+const Image& Vulkan::fallbackDescriptorImage() const {
+    return *this->fallbackDescriptorImage_;
 }
 
 std::optional<uint32_t> Vulkan::findMemoryTypeIndex(

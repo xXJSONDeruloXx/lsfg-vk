@@ -58,9 +58,15 @@ DescriptorSet::DescriptorSet(const vk::Vulkan& vk,
         + sampledImages.size()
         + storageImages.size()
         + buffers.size();
+    const size_t fallbackSampledImages = !vk.supportsNullDescriptor()
+        && shader.sampledImageCount() > sampledImages.size()
+        ? shader.sampledImageCount() - sampledImages.size() : 0;
+    const size_t fallbackStorageImages = !vk.supportsNullDescriptor()
+        && shader.storageImageCount() > storageImages.size()
+        ? shader.storageImageCount() - storageImages.size() : 0;
 
     std::vector<VkWriteDescriptorSet> entries;
-    entries.reserve(bindingCount);
+    entries.reserve(bindingCount + fallbackSampledImages + fallbackStorageImages);
 
     std::vector<VkDescriptorBufferInfo> bufferInfos;
     bufferInfos.reserve(buffers.size());
@@ -80,7 +86,7 @@ DescriptorSet::DescriptorSet(const vk::Vulkan& vk,
         });
 
     std::vector<VkDescriptorImageInfo> imageInfos;
-    imageInfos.reserve(bindingCount);
+    imageInfos.reserve(bindingCount + fallbackSampledImages + fallbackStorageImages);
 
     size_t samplerIdx{16};
     for (const auto& samp : samplers)
@@ -109,6 +115,19 @@ DescriptorSet::DescriptorSet(const vk::Vulkan& vk,
             }))
         });
     }
+    for (size_t i = 0; i < fallbackSampledImages; ++i) {
+        entries.push_back({
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = *this->descriptorSet,
+            .dstBinding = static_cast<uint32_t>(sampledIdx++),
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+            .pImageInfo = &(imageInfos.emplace_back(VkDescriptorImageInfo{
+                .imageView = vk.fallbackDescriptorImage().imageview(),
+                .imageLayout = VK_IMAGE_LAYOUT_GENERAL
+            }))
+        });
+    }
 
     size_t storageIdx{48};
     for (const auto& img : storageImages)
@@ -123,6 +142,19 @@ DescriptorSet::DescriptorSet(const vk::Vulkan& vk,
                 .imageLayout = VK_IMAGE_LAYOUT_GENERAL
             }))
         });
+    for (size_t i = 0; i < fallbackStorageImages; ++i) {
+        entries.push_back({
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = *this->descriptorSet,
+            .dstBinding = static_cast<uint32_t>(storageIdx++),
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .pImageInfo = &(imageInfos.emplace_back(VkDescriptorImageInfo{
+                .imageView = vk.fallbackDescriptorImage().imageview(),
+                .imageLayout = VK_IMAGE_LAYOUT_GENERAL
+            }))
+        });
+    }
 
     vk.df().UpdateDescriptorSets(vk.dev(),
         static_cast<uint32_t>(entries.size()), entries.data(), 0, VK_NULL_HANDLE);

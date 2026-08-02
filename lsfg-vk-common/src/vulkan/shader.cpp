@@ -150,6 +150,8 @@ namespace {
 Shader::Shader(const vk::Vulkan& vk, const std::vector<uint8_t>& code,
         size_t sampledImages, size_t storageImages,
         size_t buffers, size_t samplers) :
+    sampledImages(sampledImages),
+    storageImages(storageImages),
     shaderModule(createShaderModule(vk,
         code.data(), code.size()
     )),

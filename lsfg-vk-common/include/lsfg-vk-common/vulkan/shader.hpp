@@ -37,7 +37,13 @@ namespace vk {
         /// get the pipeline
         /// @returns the pipeline
         [[nodiscard]] const auto& pipeline() const { return *this->pipeline_; }
+        /// get the number of sampled image descriptors in the layout
+        [[nodiscard]] size_t sampledImageCount() const { return this->sampledImages; }
+        /// get the number of storage image descriptors in the layout
+        [[nodiscard]] size_t storageImageCount() const { return this->storageImages; }
     private:
+        size_t sampledImages;
+        size_t storageImages;
         ls::owned_ptr<VkShaderModule> shaderModule;
         ls::owned_ptr<VkDescriptorSetLayout> descriptorLayout;
 

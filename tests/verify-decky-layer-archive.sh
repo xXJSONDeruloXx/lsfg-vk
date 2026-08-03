@@ -37,13 +37,13 @@ assert layer["library_path"] == "liblsfg-vk-layer.so"
 assert layer["disable_environment"] == {"DISABLE_LSFGVK": "1"}
 PY
 
-if readelf --version-info "$lib" | grep -q 'GLIBCXX_'; then
-    echo "layer must statically link its C++ runtime for portable Decky payloads" >&2
+if ! readelf -d "$lib" | grep -q 'Shared library: \[libstdc++'; then
+    echo "layer must dynamically link libstdc++ for compatibility with Steam runtimes" >&2
     exit 1
 fi
 
-if readelf -d "$lib" | grep -qE 'Shared library: \[(libstdc\+\+|libgcc_s)'; then
-    echo "layer must not require dynamic libstdc++ or libgcc_s" >&2
+if ! readelf -d "$lib" | grep -q 'Shared library: \[libgcc_s'; then
+    echo "layer must dynamically link libgcc_s for compatibility with Steam runtimes" >&2
     exit 1
 fi
 

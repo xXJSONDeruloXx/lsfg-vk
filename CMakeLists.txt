@@ -21,6 +21,8 @@ project(lsfg-vk
     DESCRIPTION "Lossless Scaling Frame Generation on Linux"
     LANGUAGES CXX)
 
+include(CTest)
+
 file(GLOB SOURCES
     "src/config/*.cpp"
     "src/extract/*.cpp"
@@ -30,6 +32,10 @@ file(GLOB SOURCES
 )
 
 add_library(lsfg-vk SHARED ${SOURCES})
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
 
 # target
 set_target_properties(lsfg-vk PROPERTIES

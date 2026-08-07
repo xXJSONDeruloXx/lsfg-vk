@@ -3,6 +3,7 @@
 
 #include "core/device.hpp"
 #include "core/instance.hpp"
+#include "core/robustness2_features.hpp"
 #include "common/exception.hpp"
 
 #include <cstdint>
@@ -64,10 +65,7 @@ Device::Device(const Instance& instance, uint64_t deviceUUID) {
 
     // create logical device
     const float queuePriority{1.0F}; // highest priority
-    VkPhysicalDeviceRobustness2FeaturesEXT robustness2{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT,
-        .nullDescriptor = VK_TRUE,
-    };
+    auto robustness2 = makeRobustness2Features();
     VkPhysicalDeviceVulkan13Features features13{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
         .pNext = &robustness2,

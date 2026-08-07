@@ -51,6 +51,7 @@ Root::Root() {
         return;
 
     this->active_profile = profile->second;
+    this->layer_attached = true;
 
     std::cerr << "lsfg-vk: using profile with name '" << this->active_profile->name << "' ";
     switch (profile->first) {
@@ -69,6 +70,10 @@ Root::Root() {
     }
 }
 
+bool Root::frameGenerationEnabled() const {
+    return this->active_profile.has_value() && this->active_profile->multiplier > 1;
+}
+
 bool Root::update() {
     if (!this->config.update())
         return false;
@@ -84,8 +89,10 @@ bool Root::update() {
 
 void Root::modifyInstanceCreateInfo(VkInstanceCreateInfo& createInfo,
         const std::function<void(void)>& finish) const {
-    if (!this->active_profile.has_value())
+    if (!this->layer_attached) {
+        finish();
         return;
+    }
 
     auto extensions = add_extensions(
         createInfo.ppEnabledExtensionNames,
@@ -104,8 +111,10 @@ void Root::modifyInstanceCreateInfo(VkInstanceCreateInfo& createInfo,
 
 void Root::modifyDeviceCreateInfo(VkDeviceCreateInfo& createInfo,
         const std::function<void(void)>& finish) const {
-    if (!this->active_profile.has_value())
+    if (!this->layer_attached) {
+        finish();
         return;
+    }
 
     auto extensions = add_extensions(
         createInfo.ppEnabledExtensionNames,
@@ -150,8 +159,10 @@ void Root::modifyDeviceCreateInfo(VkDeviceCreateInfo& createInfo,
 
 void Root::modifySwapchainCreateInfo(const vk::Vulkan& vk, VkSwapchainCreateInfoKHR& createInfo,
         const std::function<void(void)>& finish) const {
-    if (!this->active_profile.has_value())
+    if (!this->frameGenerationEnabled()) {
+        finish();
         return;
+    }
 
     VkSurfaceCapabilitiesKHR caps{}; // NOLINT (enum value 0)
     auto res = vk.fi().GetPhysicalDeviceSurfaceCapabilitiesKHR(
@@ -166,8 +177,9 @@ void Root::modifySwapchainCreateInfo(const vk::Vulkan& vk, VkSwapchainCreateInfo
 
 void Root::createSwapchainContext(const vk::Vulkan& vk,
         VkSwapchainKHR swapchain, const SwapchainInfo& info) {
-    if (!this->active_profile.has_value())
-        throw ls::error("attempted to create swapchain context while layer is inactive");
+    if (!this->frameGenerationEnabled())
+        return;
+
     const auto& profile = *this->active_profile;
 
     if (!this->backend.has_value()) { // emplace backend late, due to loader bug

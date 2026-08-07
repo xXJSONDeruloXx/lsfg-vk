@@ -4,6 +4,7 @@
 #include "lsfg-vk-common/helpers/errors.hpp"
 #include "lsfg-vk-common/helpers/pointers.hpp"
 #include "lsfg-vk-common/vulkan/vulkan.hpp"
+#include "runtime_state.hpp"
 #include "swapchain.hpp"
 
 #include <algorithm>
@@ -39,6 +40,34 @@ namespace {
         std::unordered_map<VkSwapchainKHR, ls::R<vk::Vulkan>> swapchains;
         std::unordered_map<VkSwapchainKHR, SwapchainInfo> swapchainInfos;
     }* instance_info; // NOLINT (global variable)
+
+    VkResult forwardPresent(VkQueue queue, const VkPresentInfoKHR* info) {
+        if (!info || info->swapchainCount == 0 || !info->pSwapchains)
+            return VK_ERROR_INITIALIZATION_FAILED;
+
+        const auto& it = instance_info->swapchains.find(info->pSwapchains[0]);
+        if (it == instance_info->swapchains.end())
+            return VK_ERROR_INITIALIZATION_FAILED;
+
+        return it->second.get().df().QueuePresentKHR(queue, info);
+    }
+
+    void markPresentOutOfDate(const VkPresentInfoKHR* info) {
+        if (!info || !info->pResults)
+            return;
+
+        for (uint32_t i = 0; i < info->swapchainCount; ++i)
+            info->pResults[i] = VK_ERROR_OUT_OF_DATE_KHR;
+    }
+
+    VkResult forwardAndRequestRecreation(VkQueue queue, const VkPresentInfoKHR* info) {
+        const auto result = forwardPresent(queue, info);
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+            return result;
+
+        markPresentOutOfDate(info);
+        return VK_ERROR_OUT_OF_DATE_KHR;
+    }
 
     // create instance
     VkResult myvkCreateInstance(
@@ -326,7 +355,8 @@ namespace {
                 .format = newInfo.imageFormat,
                 .colorSpace = newInfo.imageColorSpace,
                 .extent = newInfo.imageExtent,
-                .presentMode = newInfo.presentMode
+                .presentMode = newInfo.presentMode,
+                .frame_generation_compatible = layer_info->root.frameGenerationEnabled()
             }).first->second;
 
             // create lsfg-vk swapchain
@@ -351,6 +381,9 @@ namespace {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunknown-warning-option"
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+        if (!info || info->swapchainCount == 0 || !info->pSwapchains)
+            return VK_ERROR_INITIALIZATION_FAILED;
+
         VkResult result = VK_SUCCESS;
 
         // ensure layer config is up to date
@@ -362,19 +395,45 @@ namespace {
         }
 
         if (reload) {
-            try {
-                for (const auto& [swapchain, vk] : instance_info->swapchains) {
-                    auto& info = instance_info->swapchainInfos.at(swapchain);
+            for (const auto& [swapchain, vk] : instance_info->swapchains) {
+                auto& swapchainInfo = instance_info->swapchainInfos.at(swapchain);
 
-                    layer_info->root.removeSwapchainContext(swapchain);
-                    layer_info->root.createSwapchainContext(vk, swapchain, info);
+                layer_info->root.removeSwapchainContext(swapchain);
+                if (!swapchainInfo.frame_generation_compatible
+                        || !layer_info->root.frameGenerationEnabled())
+                    continue;
+
+                try {
+                    layer_info->root.createSwapchainContext(vk, swapchain, swapchainInfo);
+                } catch (const std::exception& e) {
+                    std::cerr << "lsfg-vk: unable to rebuild swapchain context:\n";
+                    std::cerr << "- " << e.what() << '\n';
                 }
-
-                std::cerr << "lsfg-vk: updated lsfg-vk configuration\n";
-            } catch (const std::exception& e) {
-                std::cerr << "lsfg-vk: something went wrong during lsfg-vk configuration update:\n";
-                std::cerr << "- " << e.what() << '\n';
             }
+
+            std::cerr << "lsfg-vk: updated lsfg-vk configuration\n";
+        }
+
+        const bool frameGenerationEnabled = layer_info->root.frameGenerationEnabled();
+        if (!frameGenerationEnabled)
+            return forwardPresent(queue, info);
+
+        // A present call can contain multiple swapchains. Do not mix raw and
+        // generated presents because the wait semaphore list is shared by the
+        // whole VkPresentInfoKHR. Recreate all incompatible swapchains first.
+        for (uint32_t i = 0; i < info->swapchainCount; ++i) {
+            const auto swapchain = info->pSwapchains[i];
+            const auto swapchainInfo = instance_info->swapchainInfos.find(swapchain);
+            const auto swapchainContext = layer_info->root.hasSwapchainContext(swapchain);
+            if (swapchainInfo == instance_info->swapchainInfos.end())
+                return VK_ERROR_INITIALIZATION_FAILED;
+
+            if (decidePresentAction(
+                    frameGenerationEnabled,
+                    swapchainInfo->second.frame_generation_compatible,
+                    swapchainContext
+                ) != PresentAction::FrameGeneration)
+                return forwardAndRequestRecreation(queue, info);
         }
 
         // present each swapchain

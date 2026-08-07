@@ -25,7 +25,11 @@ namespace lsfgvk::layer {
 
         /// check if the layer is active
         /// @return true if active
-        [[nodiscard]] bool active() const { return this->active_profile.has_value(); }
+        [[nodiscard]] bool active() const { return this->layer_attached; }
+
+        /// check if frame generation is currently enabled
+        /// @return true if a matching profile with a multiplier above 1 is active
+        [[nodiscard]] bool frameGenerationEnabled() const;
 
         /// ensure the layer is up-to-date
         /// @return true if the configuration was updated
@@ -66,12 +70,21 @@ namespace lsfgvk::layer {
 
             return it->second;
         }
+        /// check if a swapchain has a live frame-generation context
+        /// @param swapchain swapchain handle
+        /// @return true if a context is present
+        [[nodiscard]] bool hasSwapchainContext(VkSwapchainKHR swapchain) const {
+            return this->swapchains.contains(swapchain);
+        }
         /// remove swapchain context
         /// @param swapchain swapchain handle
         void removeSwapchainContext(VkSwapchainKHR swapchain);
     private:
         ls::WatchedConfig config;
         std::optional<ls::GameConf> active_profile;
+        // Once negotiation succeeds, keep the layer's pass-through hooks
+        // usable even if the matching profile is removed at runtime.
+        bool layer_attached{};
 
         ls::lazy<backend::Instance> backend;
         std::unordered_map<VkSwapchainKHR, Swapchain> swapchains;

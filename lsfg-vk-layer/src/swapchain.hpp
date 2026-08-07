@@ -27,6 +27,9 @@ namespace lsfgvk::layer {
         VkColorSpaceKHR colorSpace;
         VkExtent2D extent;
         VkPresentModeKHR presentMode;
+        // True when the swapchain was created with the transfer usage and
+        // buffering required by the frame-generation path.
+        bool frame_generation_compatible{};
     };
 
     /// modify the swapchain create info based on the profile pre-swapchain creation

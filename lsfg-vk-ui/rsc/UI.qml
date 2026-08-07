@@ -189,12 +189,12 @@ ApplicationWindow {
 
                 GroupEntry {
                     title: "Multiplier"
-                    description: "Control the amount of generated frames"
+                    description: "Set to 1 to keep the layer attached without frame generation"
 
                     SpinBox {
                         Layout.alignment: Qt.AlignRight
 
-                        from: 2
+                        from: 1
                         to: 100
 
                         value: backend.multiplier

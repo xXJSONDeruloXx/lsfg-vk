@@ -11,6 +11,7 @@ option(LSFGVK_INSTALL_XDG_FILES  "Install the application icon and desktop files
 set(LSFGVK_LAYER_LIBRARY_PATH liblsfg-vk-layer.so CACHE STRING "Change where Vulkan searches for the layer library")
 set(LSFGVK_VULKAN_HEADERS_DIR "" CACHE PATH "Optional custom Vulkan-Headers include directory")
 option(LSFGVK_TESTING_RENDERDOC  "Enable RenderDoc integration for testing purposes" OFF)
+option(LSFGVK_BUILD_TESTS       "Build lsfg-vk tests"                       OFF)
 # === READ HERE FOR BUILD OPTIONS ===
 
 add_library(lsfg-vk-build-config INTERFACE)
@@ -64,4 +65,8 @@ if(LSFGVK_BUILD_UI)
 endif()
 if(LSFGVK_BUILD_CLI)
     add_subdirectory(lsfg-vk-cli)
+endif()
+if(LSFGVK_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()

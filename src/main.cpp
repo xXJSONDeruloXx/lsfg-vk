@@ -32,7 +32,7 @@ namespace {
 
         const auto name = Utils::getProcessName();
         try {
-            Config::activeConf = Config::getConfig(name);
+            Config::activeConf() = Config::getConfig(name);
         } catch (const std::exception& e) {
             std::cerr << "lsfg-vk: The configuration for " << name.second << " is invalid, IGNORING:\n";
             std::cerr << e.what() << '\n';
@@ -40,7 +40,7 @@ namespace {
         }
 
         // exit silently if not enabled
-        auto& conf = Config::activeConf;
+        auto& conf = Config::activeConf();
         if (!conf.enable && name.second != "benchmark")
             return; // default configuration will unload
 

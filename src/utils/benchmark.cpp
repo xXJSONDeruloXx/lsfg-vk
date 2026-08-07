@@ -20,7 +20,7 @@
 using namespace Benchmark;
 
 void Benchmark::run(uint32_t width, uint32_t height) {
-    const auto& conf = Config::activeConf;
+    const auto& conf = Config::activeConf();
 
     auto* lsfgInitialize = LSFG_3_1::initialize;
     auto* lsfgCreateContext = LSFG_3_1::createContext;

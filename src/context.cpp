@@ -28,7 +28,7 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
         : swapchain(swapchain), swapchainImages(swapchainImages),
           extent(extent) {
     // get updated configuration
-    auto& conf = Config::activeConf;
+    auto& conf = Config::activeConf();
     if (!conf.config_file.empty()
             && (
                     !std::filesystem::exists(conf.config_file)
@@ -129,7 +129,7 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
 
 VkResult LsContext::present(const Hooks::DeviceInfo& info, const void* pNext, VkQueue queue,
         const std::vector<VkSemaphore>& gameRenderSemaphores, uint32_t presentIdx) {
-    const auto& conf = Config::activeConf;
+    const auto& conf = Config::activeConf();
     auto& pass = this->passInfos.at(this->frameIdx % 8);
 
     // 1. copy swapchain image to frame_0/frame_1

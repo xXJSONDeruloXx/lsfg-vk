@@ -94,7 +94,7 @@ namespace {
 
     std::string getDllPath() {
         // overriden path
-        std::string dllPath = Config::activeConf.dll;
+    std::string dllPath = Config::activeConf().dll;
         if (!dllPath.empty())
             return dllPath;
         // home based paths

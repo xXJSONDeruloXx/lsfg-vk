@@ -35,7 +35,11 @@ namespace Config {
     };
 
     /// Active configuration. Must be set in main.cpp.
-    extern Configuration activeConf;
+    ///
+    /// Function-local storage is intentional: the layer is loaded from a
+    /// Vulkan loader constructor, so namespace-scope C++ objects may not have
+    /// completed dynamic initialization yet.
+    Configuration& activeConf() noexcept;
 
     ///
     /// Read the configuration file while preserving the previous configuration

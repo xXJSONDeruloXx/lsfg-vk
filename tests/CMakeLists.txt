@@ -42,4 +42,4 @@ add_test(NAME lsfg-vk-layer-exports
     COMMAND lsfg-vk-layer-exports-test $<TARGET_FILE:lsfg-vk>)
 set_tests_properties(lsfg-vk-layer-exports
     PROPERTIES
-        ENVIRONMENT "LSFG_CONFIG=/tmp/lsfg-vk-layer-exports-test.conf;LSFG_PROCESS=lsfg-vk-layer-exports-test")
+        ENVIRONMENT "LSFG_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/valid_layer_config.toml;LSFG_PROCESS=lsfg-vk-layer-exports-test")

@@ -23,11 +23,21 @@
 using namespace Config;
 
 namespace {
-    Configuration globalConf{};
-    std::optional<std::unordered_map<std::string, Configuration>> gameConfs;
+    Configuration& globalConf() noexcept {
+        static Configuration value{};
+        return value;
+    }
+
+    std::optional<std::unordered_map<std::string, Configuration>>& gameConfs() noexcept {
+        static std::optional<std::unordered_map<std::string, Configuration>> value;
+        return value;
+    }
 }
 
-Configuration Config::activeConf{};
+Configuration& Config::activeConf() noexcept {
+    static Configuration value{};
+    return value;
+}
 
 namespace {
     /// Turn a string into a VkPresentModeKHR enum value.
@@ -115,8 +125,8 @@ void Config::updateConfig(const std::string& file) {
     }
 
     // store configurations
-    globalConf = global;
-    gameConfs = std::move(games);
+    globalConf() = global;
+    gameConfs() = std::move(games);
 }
 
 Configuration Config::getConfig(const std::pair<std::string, std::string>& name) {
@@ -146,15 +156,15 @@ Configuration Config::getConfig(const std::pair<std::string, std::string>& name)
     }
 
     // process new configuration system
-    if (!gameConfs.has_value())
-        return globalConf;
+    if (!gameConfs().has_value())
+        return globalConf();
 
-    const auto& games = *gameConfs;
+    const auto& games = *gameConfs();
     auto it = std::ranges::find_if(games, [&name](const auto& pair) {
         return name.first.ends_with(pair.first) || (name.second == pair.first);
     });
     if (it != games.end())
         return it->second;
 
-    return globalConf;
+    return globalConf();
 }

@@ -150,7 +150,7 @@ namespace {
         createInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
         // enforce present mode
-        createInfo.presentMode = Config::activeConf.e_present;
+        createInfo.presentMode = Config::activeConf().e_present;
 
         // retire potential old swapchain
         if (pCreateInfo->oldSwapchain) {
@@ -260,7 +260,7 @@ namespace {
         VkResult res{}; // might return VK_SUBOPTIMAL_KHR
         try {
             // ensure config is valid
-            auto& conf = Config::activeConf;
+            auto& conf = Config::activeConf();
             if (!conf.config_file.empty()
                     && (
                             !std::filesystem::exists(conf.config_file)

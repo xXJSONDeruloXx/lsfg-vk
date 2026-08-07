@@ -1,0 +1,12 @@
+version = 1
+
+[global]
+dll = "/tmp/lsfg-vk-test/Lossless.dll"
+
+[[game]]
+exe = "lsfg-vk-layer-device-test"
+multiplier = 1
+flow_scale = 1.0
+performance_mode = false
+hdr_mode = false
+experimental_present_mode = "fifo"

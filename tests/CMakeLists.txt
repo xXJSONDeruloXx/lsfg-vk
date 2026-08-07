@@ -43,3 +43,18 @@ add_test(NAME lsfg-vk-layer-exports
 set_tests_properties(lsfg-vk-layer-exports
     PROPERTIES
         ENVIRONMENT "LSFG_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/valid_layer_config.toml;LSFG_PROCESS=lsfg-vk-layer-exports-test")
+
+add_executable(lsfg-vk-layer-device-test
+    layer_device_test.cpp)
+
+set_target_properties(lsfg-vk-layer-device-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON)
+target_link_libraries(lsfg-vk-layer-device-test PRIVATE volk)
+
+add_test(NAME lsfg-vk-layer-device
+    COMMAND lsfg-vk-layer-device-test)
+set_tests_properties(lsfg-vk-layer-device
+    PROPERTIES
+        SKIP_RETURN_CODE 77
+        ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_LS_frame_generation;LSFG_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/valid_enabled_layer_config.toml;LSFG_PROCESS=lsfg-vk-layer-device-test")

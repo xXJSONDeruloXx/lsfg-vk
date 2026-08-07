@@ -68,7 +68,7 @@ namespace {
 
         [[nodiscard]] const auto& file() const { return this->config_file; }
 
-        void write(std::optional<size_t> multiplier) {
+        void write(std::optional<size_t> multiplier, std::string_view flowScale = "0.9") {
             const auto previous = std::filesystem::exists(this->config_file)
                 ? std::filesystem::last_write_time(this->config_file)
                 : std::filesystem::file_time_type{};
@@ -83,7 +83,7 @@ namespace {
                     << "name = 'Test profile'\n"
                     << "active_in = 'unused-test-process'\n"
                     << "multiplier = " << *multiplier << "\n"
-                    << "flow_scale = 0.9\n"
+                    << "flow_scale = " << flowScale << "\n"
                     << "performance_mode = false\n"
                     << "pacing = 'none'\n";
             }
@@ -160,6 +160,24 @@ namespace {
         expect(rejected, "multiplier 0 must remain invalid");
     }
 
+    void testDecimalConfigValues() {
+        TemporaryConfig files;
+        Environment configPath("LSFGVK_CONFIG", files.file().string());
+        Environment profile("LSFGVK_PROFILE", "Test profile");
+
+        for (const auto [text, expected] : {
+                std::pair{"0.25", 0.25F},
+                std::pair{"0.85", 0.85F},
+                std::pair{"1.0", 1.0F},
+                std::pair{"9e-1", 0.9F}
+            }) {
+            files.write(2, text);
+            const ls::ConfigFile config(files.file());
+            expect(std::fabs(config.profiles().front().flow_scale - expected) < 0.0001F,
+                "valid decimal flow_scale must round-trip");
+        }
+    }
+
     void testRootStateTransitions() {
         TemporaryConfig files;
         Environment configPath("LSFGVK_CONFIG", files.file().string());
@@ -227,6 +245,7 @@ int main() {
     try {
         testPresentDecisionPermutations();
         testMultiplierValidation();
+        testDecimalConfigValues();
         testRootStateTransitions();
         testUnmatchedStartup();
         testEnvironmentMultiplierOne();

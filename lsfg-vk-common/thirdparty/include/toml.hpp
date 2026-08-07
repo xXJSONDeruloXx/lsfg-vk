@@ -14355,48 +14355,88 @@ TOML_IMPL_NAMESPACE_START
 				}
 			}
 
-			// convert to double
-			double result;
-#if TOML_FLOAT_CHARCONV
+			// Convert to double without using either std::from_chars or a locale-aware
+			// stream. Both implementations have been observed to reject valid decimal
+			// values when this layer is loaded through Proton/Wine.
+			//
+			// The grammar above has already validated the input, so this only needs to
+			// evaluate digits, the decimal point, and the optional decimal exponent.
+			// Keeping the conversion here locale-independent is important because this
+			// parser runs before the layer has a chance to finish its runtime setup.
+			constexpr int max_decimal_scale = 4096;
+			long double mantissa			   = 0.0L;
+			int fractional_digits			   = 0;
+			int exponent_magnitude			   = 0;
+			bool after_decimal				   = false;
+			bool in_exponent				   = false;
+			bool exponent_negative			   = false;
+			bool exponent_out_of_range		   = false;
+			bool saw_mantissa_digit			   = false;
+
+			for (size_t i = 0; i < length; i++)
 			{
-				auto fc_result = std::from_chars(chars, chars + length, result);
-				switch (fc_result.ec)
+				const char c = chars[i];
+				if (c >= '0' && c <= '9')
 				{
-					TOML_LIKELY_CASE
-					case std::errc{}: // ok
-						return result * sign;
+					const int digit = c - '0';
+					if (in_exponent)
+					{
+						if (!exponent_out_of_range)
+						{
+							if (exponent_magnitude > (max_decimal_scale - digit) / 10)
+								exponent_out_of_range = true;
+							else
+								exponent_magnitude = exponent_magnitude * 10 + digit;
+						}
+					}
+					else
+					{
+						saw_mantissa_digit = true;
+						mantissa = mantissa * 10.0L + static_cast<long double>(digit);
+						if (after_decimal)
+							fractional_digits++;
+					}
+				}
+				else if (c == '.')
+					after_decimal = true;
+				else if (c == 'e' || c == 'E')
+					in_exponent = true;
+				else if (in_exponent && (c == '+' || c == '-'))
+					exponent_negative = c == '-';
+			}
 
-					case std::errc::invalid_argument:
-						set_error_and_return_default("'"sv,
-													 std::string_view{ chars, length },
-													 "' could not be interpreted as a value"sv);
-						break;
-
-					case std::errc::result_out_of_range:
-						set_error_and_return_default("'"sv,
+			if (!saw_mantissa_digit || exponent_out_of_range || !std::isfinite(mantissa))
+				set_error_and_return_default("'"sv,
 													 std::string_view{ chars, length },
 													 "' is not representable in 64 bits"sv);
-						break;
 
-					default: //??
-						set_error_and_return_default("an unspecified error occurred while trying to interpret '"sv,
+			const long long exponent = exponent_negative ? -static_cast<long long>(exponent_magnitude)
+															 : static_cast<long long>(exponent_magnitude);
+			const long long scale = exponent - static_cast<long long>(fractional_digits);
+			if (scale > max_decimal_scale || scale < -max_decimal_scale)
+				set_error_and_return_default("'"sv,
 													 std::string_view{ chars, length },
-													 "' as a value"sv);
-				}
-			}
-#else
+													 "' is not representable in 64 bits"sv);
+
+			long double scaled = mantissa;
+			if (scale > 0)
 			{
-				std::stringstream ss;
-				ss.imbue(std::locale::classic());
-				ss.write(chars, static_cast<std::streamsize>(length));
-				if ((ss >> result))
-					return result * sign;
-				else
-					set_error_and_return_default("'"sv,
-												 std::string_view{ chars, length },
-												 "' could not be interpreted as a value"sv);
+				for (long long i = 0; i < scale; i++)
+					scaled *= 10.0L;
 			}
-#endif
+			else
+			{
+				for (long long i = 0; i > scale; i--)
+					scaled /= 10.0L;
+			}
+
+			double result = static_cast<double>(scaled);
+			if (!std::isfinite(scaled) || !std::isfinite(result) || (mantissa != 0.0L && result == 0.0))
+				set_error_and_return_default("'"sv,
+													 std::string_view{ chars, length },
+													 "' is not representable in 64 bits"sv);
+
+			return result * sign;
 		}
 
 		TOML_NODISCARD

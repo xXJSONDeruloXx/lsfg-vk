@@ -17,6 +17,16 @@ set(COMMON_SOURCES
 
 add_library(lsfg-vk-common STATIC ${COMMON_SOURCES})
 
+# toml++ otherwise selects its locale/iostream fallback for GCC and Clang.
+# The layer is commonly loaded through Proton's pressure-vessel environment,
+# where that fallback can reject valid decimal TOML values such as 0.9.
+# Use the locale-independent conversion implementation for Linux runtime
+# config. Apple Clang intentionally marks floating-point from_chars as
+# unavailable in the SDK, so retain toml++'s supported fallback there.
+if(NOT APPLE)
+    target_compile_definitions(lsfg-vk-common PRIVATE TOML_FLOAT_CHARCONV=1)
+endif()
+
 target_link_libraries(lsfg-vk-common
     PUBLIC lsfg-vk-build-config)
 if(CMAKE_DL_LIBS)

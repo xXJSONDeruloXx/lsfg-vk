@@ -5,6 +5,7 @@
 
 #include "lsfg-vk-common/configuration/config.hpp"
 
+#include <cmath>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -82,7 +83,7 @@ namespace {
                     << "name = 'Test profile'\n"
                     << "active_in = 'unused-test-process'\n"
                     << "multiplier = " << *multiplier << "\n"
-                    << "flow_scale = 1.0\n"
+                    << "flow_scale = 0.9\n"
                     << "performance_mode = false\n"
                     << "pacing = 'none'\n";
             }
@@ -145,6 +146,8 @@ namespace {
         const ls::ConfigFile disabled(files.file());
         expect(disabled.profiles().front().multiplier == 1,
             "multiplier 1 must be accepted");
+        expect(std::fabs(disabled.profiles().front().flow_scale - 0.9F) < 0.0001F,
+            "decimal flow_scale must be parsed");
 
         files.write(0);
         bool rejected = false;
